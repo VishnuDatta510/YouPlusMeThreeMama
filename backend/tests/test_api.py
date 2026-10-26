@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -212,3 +213,39 @@ def test_export_included_csv(client, auth, loaded):
     ]
     assert any(r["population"] or r["intervention"] or r["outcome"] for r in out)
     assert client.get("/export/included.csv").status_code == 401
+
+
+def test_fuzzy_duplicate_needs_review_until_decided(client, auth, loaded, db):
+    from app.models import DedupGroup, DedupGroupMember
+
+    a, b = [r["id"] for r in client.get("/records", headers=auth).json()[:2]]
+    group = DedupGroup(representative_record_id=a)
+    db.add(group)
+    db.flush()
+    db.add(
+        DedupGroupMember(group_id=group.id, record_id=b, match_method="fuzzy", score=90, needs_review=True)
+    )
+    db.commit()
+    flagged = client.get("/records?needs_review=true", headers=auth).json()
+    assert [r["id"] for r in flagged] == [a] and flagged[0]["needs_review"]
+    client.post(
+        f"/records/{b}/decisions",
+        json={"decision_type": "duplicate", "value": {"duplicate_of": None}},
+        headers=auth,
+    )
+    assert client.get("/records?needs_review=true", headers=auth).json() == []
+
+
+def test_cors_allows_origin_regex(client, monkeypatch):
+    import importlib
+
+    import app.main
+
+    monkeypatch.setattr(settings, "cors_origin_regex", r"https://.*\.vercel\.app")
+    reloaded = importlib.reload(app.main)
+    try:
+        r = TestClient(reloaded.app).get("/health", headers={"Origin": "https://pr-1.vercel.app"})
+        assert r.headers["access-control-allow-origin"] == "https://pr-1.vercel.app"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(app.main)

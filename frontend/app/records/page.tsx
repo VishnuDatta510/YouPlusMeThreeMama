@@ -9,6 +9,7 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
   const initialVersion = use(searchParams).version;
   const [version, setVersion] = useState(typeof initialVersion === "string" ? initialVersion : "");
   const [status, setStatus] = useState("");
+  const [review, setReview] = useState(false);
   const [versions, setVersions] = useState<QueryVersion[]>([]);
   const [rows, setRows] = useState<RecordRow[] | null>(null);
   const [error, setError] = useState("");
@@ -18,10 +19,10 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
   }, []);
   useEffect(() => {
     api
-      .records({ status, query_version_id: version })
+      .records({ status, query_version_id: version, needs_review: review ? "true" : "" })
       .then(setRows)
       .catch((e) => setError(e.message));
-  }, [status, version]);
+  }, [status, version, review]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -48,6 +49,10 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="flex items-center gap-2 py-2">
+            <input type="checkbox" checked={review} onChange={(e) => setReview(e.target.checked)} />
+            Possible duplicates to review
           </label>
           <button
             className="btn"
@@ -89,7 +94,17 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
                 </td>
                 <td className="pr-3 text-neutral-600 dark:text-neutral-400">{r.reason}</td>
                 <td>{r.source}</td>
-                <td className="text-right">{r.duplicates || ""}</td>
+                <td className="text-right">
+                  {r.duplicates || ""}
+                  {r.needs_review && (
+                    <span
+                      className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900 dark:text-amber-100"
+                      title="Has a fuzzy title match (score 85-95) that no reviewer has confirmed or rejected"
+                    >
+                      review
+                    </span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

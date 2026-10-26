@@ -69,6 +69,7 @@ class RecordRow(BaseModel):
     reason: str
     source: str  # machine / human / ""
     duplicates: int
+    needs_review: bool  # has a fuzzy duplicate awaiting a reviewer's decision
 
 
 class ScreenValue(BaseModel):

@@ -53,8 +53,9 @@ cd frontend && npm run lint && npx next typegen && npx tsc --noEmit && npm run b
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/minirayyan` | `postgres://` and `postgresql://` URLs are also accepted (Railway's format works as-is) |
-| `JWT_SECRET` | `dev-secret-change-me` | **Set a long random value in production** |
+| `JWT_SECRET` | `dev-secret-change-me` | **Set a long random value in production.** The API refuses to start with the default when `RAILWAY_ENVIRONMENT` is set |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed frontend origins |
+| `CORS_ORIGIN_REGEX` | empty | Optional regex for extra origins, for example `https://your-app-.*\.vercel\.app` to allow Vercel preview URLs |
 | `NCBI_TOOL` | `mini-rayyan` | Sent with every E-utilities request |
 | `NCBI_EMAIL` | empty | Your contact email; NCBI asks for it |
 | `NCBI_API_KEY` | empty | Optional; raises the rate limit from 3 to 10 requests/s |
@@ -91,7 +92,7 @@ flowchart LR
 2. **Fetch and screen**: `POST /queries/{id}/fetch` runs the pipeline. Each step writes a `run_log` row (see `GET /queries/{id}/runs`).
    1. **fetch**: ESearch up to `MAX_FETCH` IDs, then EFetch only PMIDs that are not stored yet. This step is incremental and links every hit to the version.
    2. **dedupe**: exact DOI or PMID match first, then a fuzzy title match (rapidfuzz `token_sort_ratio`) within the same year and first-author block.
-      - A score of 95 or more groups the records automatically; 85–95 groups them with a *needs review* flag.
+      - A score of 95 or more groups the records automatically; 85–95 groups them with a *needs review* flag. The records table marks those representatives with a **review** badge and can filter to them, until a reviewer confirms or rejects the match.
       - The lowest record id is the representative, so results are deterministic.
    3. **screen**: transparent rules (non-English, non-human, case report, simulation). Each result is stored with its `method_version`, so re-runs only screen what is new or what the rules changed.
    4. **pico**: rule-based P/I/C/O spans for included and maybe records with an abstract.
@@ -152,6 +153,6 @@ flowchart LR
 
 ### 3. Connect them
 
-Set the backend's `CORS_ORIGINS` on Railway to include the Vercel URL, for example `https://your-app.vercel.app,http://localhost:3000`. Railway redeploys automatically when variables change. Sign in on the Vercel URL with the demo login.
+Set the backend's `CORS_ORIGINS` on Railway to include the Vercel URL, for example `https://your-app.vercel.app,http://localhost:3000`. To let Vercel preview deployments call the API too, also set `CORS_ORIGIN_REGEX` (see the table above). Railway redeploys automatically when variables change. Sign in on the Vercel URL with the demo login.
 
 > Records are retrieved from PubMed via the NCBI E-utilities. This product is not endorsed or certified by NCBI.

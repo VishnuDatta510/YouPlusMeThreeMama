@@ -24,18 +24,33 @@ def representatives(db: Session, query_version_id: int | None = None) -> tuple[l
     return list(db.scalars(q)), dup
 
 
+def review_reps(db: Session) -> set[int]:
+    """Representatives with a fuzzy (85-95) duplicate that no reviewer has confirmed or rejected yet."""
+    decided = state.latest_human(db, "duplicate")
+    pending = db.execute(
+        select(DedupGroupMember.record_id, DedupGroup.representative_record_id)
+        .join(DedupGroup, DedupGroup.id == DedupGroupMember.group_id)
+        .where(DedupGroupMember.needs_review)
+    ).all()
+    return {rep for rec, rep in pending if rec not in decided}
+
+
 @router.get("", response_model=list[RecordRow])
 def list_records(
-    status: str | None = None, query_version_id: int | None = None, db: Session = Depends(get_db)
+    status: str | None = None,
+    query_version_id: int | None = None,
+    needs_review: bool = False,
+    db: Session = Depends(get_db),
 ):
     # ponytail: filters in Python over the whole set; push status into SQL once projects reach ~50k records
     records, dup = representatives(db, query_version_id)
     statuses = state.screen_status(db, [r.id for r in records])
     dup_counts = Counter(dup.values())
+    review = review_reps(db)
     rows = []
     for r in records:
         s = statuses.get(r.id, {"label": "unscreened", "reason": "", "source": ""})
-        if status and s["label"] != status:
+        if (status and s["label"] != status) or (needs_review and r.id not in review):
             continue
         rows.append(
             RecordRow(
@@ -47,6 +62,7 @@ def list_records(
                 reason=s["reason"],
                 source=s["source"],
                 duplicates=dup_counts[r.id],
+                needs_review=r.id in review,
             )
         )
     return rows

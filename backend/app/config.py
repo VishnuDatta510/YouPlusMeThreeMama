@@ -5,9 +5,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/minirayyan"
-    jwt_secret: str = "dev-secret-change-me"
+    jwt_secret: str = "dev-secret-change-me"  # app refuses to start with this on Railway
     jwt_expire_minutes: int = 720
     cors_origins: str = "http://localhost:3000"
+    cors_origin_regex: str = ""  # e.g. https://mini-rayyan-.*\.vercel\.app for Vercel preview URLs
     ncbi_tool: str = "mini-rayyan"
     ncbi_email: str = ""
     ncbi_api_key: str = ""
