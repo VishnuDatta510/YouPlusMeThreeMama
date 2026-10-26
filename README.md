@@ -9,6 +9,8 @@ Demo login (created on every start): `demo@minirayyan.dev` / `demo1234`
 
 ## Run it locally
 
+Step-by-step guide for teammates, including setup without Docker: [SETUP.md](SETUP.md).
+
 Prerequisites: Docker, Node 20+, and Python 3.11+ (Python is only needed to run backend tests outside Docker).
 
 ```bash
