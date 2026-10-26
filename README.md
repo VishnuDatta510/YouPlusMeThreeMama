@@ -3,7 +3,7 @@
 A small Rayyan-style tool for systematic reviews. It searches PubMed, fetches records, removes duplicates, screens each record as Include, Exclude or Maybe with transparent rules, and tags PICO spans in abstracts. Reviewers can override any machine decision, and every override is logged.
 
 - **Frontend**: Next.js (App Router, TypeScript, Tailwind) in [`frontend/`](frontend/), deployed on Vercel
-- **Backend**: FastAPI, SQLAlchemy 2, Alembic, Postgres in [`backend/`](backend/), deployed on Railway
+- **Backend**: FastAPI, SQLAlchemy 2, Alembic, Postgres in [`backend/`](backend/), deployed on Render
 
 Demo login (created on every start): `demo@minirayyan.dev` / `demo1234`
 
@@ -48,12 +48,12 @@ cd frontend && npm run lint && npx next typegen && npx tsc --noEmit && npm run b
 
 ## Environment variables
 
-### Backend (`backend/.env`, Railway service variables)
+### Backend (`backend/.env`, Render service environment)
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/minirayyan` | `postgres://` and `postgresql://` URLs are also accepted (Railway's format works as-is) |
-| `JWT_SECRET` | `dev-secret-change-me` | **Set a long random value in production.** The API refuses to start with the default when `RAILWAY_ENVIRONMENT` is set |
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/minirayyan` | `postgres://` and `postgresql://` URLs are also accepted (Render's format works as-is) |
+| `JWT_SECRET` | `dev-secret-change-me` | **Set a long random value in production.** The API refuses to start with the default on Render (where `RENDER` is set). The Blueprint generates one for you |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed frontend origins |
 | `CORS_ORIGIN_REGEX` | empty | Optional regex for extra origins, for example `https://your-app-.*\.vercel\.app` to allow Vercel preview URLs |
 | `NCBI_TOOL` | `mini-rayyan` | Sent with every E-utilities request |
@@ -63,13 +63,13 @@ cd frontend && npm run lint && npx next typegen && npx tsc --noEmit && npm run b
 | `PICO_METHOD` | `rules` | PICO tagger; `rules` is the only method so far |
 | `SCREENING_CRITERIA` | `non_english,non_human,case_report,simulation` | Active exclusion rules; changing them re-screens on the next run |
 | `SEED_EMAIL` / `SEED_PASSWORD` | `demo@minirayyan.dev` / `demo1234` | Demo reviewer, created if missing on start |
-| `PORT` | `8000` | Set by Railway |
+| `PORT` | `8000` | Set by Render |
 
 ### Frontend (`frontend/.env.local`, Vercel project env)
 
 | Variable | Example | Notes |
 | --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | `https://your-api.up.railway.app` | Backend base URL, no trailing slash |
+| `NEXT_PUBLIC_API_URL` | `https://mini-rayyan-api.onrender.com` | Backend base URL, no trailing slash |
 
 ## How it works
 
@@ -78,7 +78,7 @@ flowchart LR
   subgraph Vercel
     UI[Next.js app]
   end
-  subgraph Railway
+  subgraph Render
     API[FastAPI]
     DB[(Postgres)]
   end
@@ -120,40 +120,33 @@ flowchart LR
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR.
   - Backend: Python 3.11, ruff, and pytest against a `postgres:16` service.
   - Frontend: Node 20, `npm ci`, lint, `tsc`, and `next build`.
-- [`.github/workflows/deploy-backend.yml`](.github/workflows/deploy-backend.yml) runs on pushes to `main` that touch `backend/**`. It reuses the CI workflow, then deploys only if CI passes, using `railway up`. Migrations run when the container starts.
+- Render deploys the backend from [`render.yaml`](render.yaml) on pushes to `main` that touch `backend/**`, only after CI passes (`autoDeployTrigger: checksPass`). Migrations run when the container starts.
 - Vercel deploys the frontend through its GitHub integration: a preview for every PR and production on `main`. [`frontend/vercel.json`](frontend/vercel.json) skips builds when nothing under `frontend/` changed.
 
 ## Deploy
 
-### 1. Railway (backend + Postgres)
+### 1. Render (backend + Postgres)
 
-1. In [railway.com](https://railway.com), create a project with **New Project → Deploy PostgreSQL**.
-2. In the project, add the backend with **+ Create → GitHub Repo →** this repository.
-3. Open the new service's **Settings**:
-   - Set **Source → Root Directory** to `/backend`. Railway then uses `backend/Dockerfile` and `backend/railway.json`, which sets the health check to `/health`.
-   - Under **Networking**, click **Generate Domain** and copy the URL.
-   - Optional: under **Source**, disconnect the repo, or enable **Wait for CI**. Otherwise Railway's own GitHub auto-deploy runs alongside the GitHub Action, and every push deploys twice.
-4. On the service's **Variables** tab, set:
-   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (use the reference variable picker)
-   - `JWT_SECRET` = a long random string (for example the output of `openssl rand -hex 32`)
+1. Push this repository to GitHub.
+2. In [render.com](https://render.com), go to **New → Blueprint**, connect the repository and apply [`render.yaml`](render.yaml). It creates the `mini-rayyan-api` web service (Docker, health check `/health`) and the `mini-rayyan-db` Postgres database, and generates `JWT_SECRET`.
+3. Render asks for the variables marked `sync: false`:
    - `NCBI_EMAIL` = your email
+   - `SEED_PASSWORD` = a password for the demo login (use something other than `demo1234` on a public site)
    - `CORS_ORIGINS` = `http://localhost:3000` for now; the Vercel URL is added in step 3
-   - Optional: `NCBI_API_KEY`, `SEED_PASSWORD` (change the demo password for a public deployment)
-5. Create a token: **Project Settings → Tokens →** create a token for the `production` environment.
-6. In GitHub, go to **Settings → Secrets and variables → Actions** and add:
-   - Secret `RAILWAY_TOKEN` = the project token
-   - Secret (or variable) `RAILWAY_SERVICE` = the backend service name as shown in Railway (for example `backend`)
-7. Push to `main`, or re-run **Deploy backend** in the Actions tab. Then check that `https://<railway-domain>/health` returns `{"status":"ok"}`.
+   - `CORS_ORIGIN_REGEX` = leave empty or see the table above
+4. When the deploy is live, check that `https://<service>.onrender.com/health` returns `{"status":"ok"}`.
+
+The free plan sleeps after 15 minutes without traffic (the first request takes about a minute), and a free Postgres database expires after 30 days unless you upgrade it.
 
 ### 2. Vercel (frontend)
 
 1. In [vercel.com](https://vercel.com), go to **Add New → Project →** import this repository.
 2. Set **Root Directory** to `frontend`. The framework preset is detected as Next.js.
-3. Add the environment variable `NEXT_PUBLIC_API_URL` = `https://<railway-domain>` (no trailing slash) for Production and Preview.
+3. Add the environment variable `NEXT_PUBLIC_API_URL` = `https://<service>.onrender.com` (no trailing slash) for Production and Preview.
 4. Click **Deploy**.
 
 ### 3. Connect them
 
-Set the backend's `CORS_ORIGINS` on Railway to include the Vercel URL, for example `https://your-app.vercel.app,http://localhost:3000`. To let Vercel preview deployments call the API too, also set `CORS_ORIGIN_REGEX` (see the table above). Railway redeploys automatically when variables change. Sign in on the Vercel URL with the demo login.
+Set the backend's `CORS_ORIGINS` on Render (**Environment** tab) to include the Vercel URL, for example `https://your-app.vercel.app,http://localhost:3000`. To let Vercel preview deployments call the API too, also set `CORS_ORIGIN_REGEX`. Save and redeploy, then sign in on the Vercel URL with the demo login.
 
 > Records are retrieved from PubMed via the NCBI E-utilities. This product is not endorsed or certified by NCBI.

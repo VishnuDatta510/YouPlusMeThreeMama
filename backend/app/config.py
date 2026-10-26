@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/minirayyan"
-    jwt_secret: str = "dev-secret-change-me"  # app refuses to start with this on Railway
+    jwt_secret: str = "dev-secret-change-me"  # app refuses to start with this on Render
     jwt_expire_minutes: int = 720
     cors_origins: str = "http://localhost:3000"
     cors_origin_regex: str = ""  # e.g. https://mini-rayyan-.*\.vercel\.app for Vercel preview URLs
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_url(self) -> str:
-        # Railway hands out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg driver named.
+        # Render and others hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg driver named.
         url = self.database_url.replace("postgres://", "postgresql://", 1)
         return url.replace("postgresql://", "postgresql+psycopg://", 1)
 
