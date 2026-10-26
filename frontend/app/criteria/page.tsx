@@ -81,7 +81,7 @@ export default function CriteriaPage() {
                     <p className="mt-1 text-sm leading-relaxed text-muted">{c.why}</p>
                     <p className="mt-1.5 text-xs text-faint">
                       {/* lower-case the first word unless it is an acronym such as MeSH */}
-                      Checked using {/^.[a-z]/.test(c.basis) ? c.basis[0].toLowerCase() + c.basis.slice(1) : c.basis}
+                      Checked using {/^[A-Z][a-z]+\b/.test(c.basis) ? c.basis[0].toLowerCase() + c.basis.slice(1) : c.basis}
                     </p>
                   </div>
                 </li>
