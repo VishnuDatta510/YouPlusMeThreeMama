@@ -25,10 +25,12 @@ class QueryIn(BaseModel):
     query_string: str = Field(min_length=1, max_length=4000)
     date_from: date | None = None
     date_to: date | None = None
-    parent_version_id: int | None = None
+    parent_version_id: int | None = None  # set when the query was edited from an earlier version
+    sources: list[Literal["pubmed", "europepmc"]] = Field(default=["pubmed"], min_length=1)
 
     @model_validator(mode="after")
     def check_dates(self):
+        self.sources = list(dict.fromkeys(self.sources))
         self.query_string = self.query_string.strip()
         if not self.query_string:
             raise ValueError("query_string is empty")
@@ -47,12 +49,30 @@ class QueryVersionOut(BaseModel):
     date_to: date | None
     sources: list
     hit_count: int
+    source_hits: dict
     status: str
+    active: bool
     created_at: datetime
+
+
+class ActiveIn(BaseModel):
+    active: bool
+
+
+class ImportIn(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=50_000_000)
+
+
+class CriteriaIn(BaseModel):
+    active: list[str]
+    note: str = Field("", max_length=2000)
 
 
 class RunLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    id: int
+    query_version_id: int
     step: str
     status: str
     started_at: datetime
@@ -63,8 +83,12 @@ class RunLogOut(BaseModel):
 class RecordRow(BaseModel):
     id: int
     pmid: str | None
+    doi: str | None
     title: str
+    first_author: str
+    journal: str
     year: int | None
+    origin: str  # pubmed / europepmc / import: where the record came from
     status: str  # include / exclude / maybe / unscreened
     reason: str
     source: str  # machine / human / ""

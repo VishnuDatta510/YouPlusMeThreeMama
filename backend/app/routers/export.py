@@ -17,9 +17,9 @@ PICO_COLUMNS = {"P": "population", "I": "intervention", "C": "comparator", "O": 
 
 @router.get("/included.csv")
 def included_csv(query_version_id: int | None = None, db: Session = Depends(get_db)):
-    records, _ = representatives(db, query_version_id)
+    records, dup = representatives(db, query_version_id)
     ids = [r.id for r in records]
-    statuses = state.screen_status(db, ids)
+    statuses = state.screen_status(db, ids, dup)
     spans = state.pico_spans(db, ids)
     out = io.StringIO()
     writer = csv.writer(out)

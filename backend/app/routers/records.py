@@ -1,38 +1,37 @@
 from collections import Counter
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import current_reviewer
 from app.db import get_db
-from app.models import DedupGroup, DedupGroupMember, HumanDecision, Record, RecordQueryLink, Reviewer
+from app.models import HumanDecision, MachineResult, QueryVersion, Record, RecordQueryLink, Reviewer
 from app.schemas import DecisionIn, RecordRow
-from app.services import state
+from app.services import pico, pipeline, state
 
 router = APIRouter(prefix="/records", tags=["records"], dependencies=[Depends(current_reviewer)])
 
 
 def representatives(db: Session, query_version_id: int | None = None) -> tuple[list[Record], dict[int, int]]:
-    """Records that are not a duplicate of another record, plus the {dup_id: rep_id} map."""
+    """Working-set records that are not a duplicate of another record, plus the {dup_id: rep_id} map.
+    With `query_version_id`, the records that version found instead of the working set."""
     dup = state.duplicate_of(db)
-    q = select(Record).where(Record.id.not_in(list(dup))).order_by(Record.id)
-    if query_version_id is not None:
-        q = q.join(RecordQueryLink, RecordQueryLink.record_id == Record.id).where(
-            RecordQueryLink.query_version_id == query_version_id
-        )
+    if query_version_id is None:
+        ids = state.working_set(db)
+    else:
+        ids = db.scalars(
+            select(RecordQueryLink.record_id).where(RecordQueryLink.query_version_id == query_version_id)
+        ).all()
+    q = select(Record).where(Record.id.in_(ids), Record.id.not_in(list(dup))).order_by(Record.id)
     return list(db.scalars(q)), dup
 
 
 def review_reps(db: Session) -> set[int]:
     """Representatives with a fuzzy (85-95) duplicate that no reviewer has confirmed or rejected yet."""
     decided = state.latest_human(db, "duplicate")
-    pending = db.execute(
-        select(DedupGroupMember.record_id, DedupGroup.representative_record_id)
-        .join(DedupGroup, DedupGroup.id == DedupGroupMember.group_id)
-        .where(DedupGroupMember.needs_review)
-    ).all()
-    return {rep for rec, rep in pending if rec not in decided}
+    rows = state.snapshot(db, state.current_run(db))
+    return {rep for rec, rep, _, _, needs_review in rows if needs_review and rec not in decided}
 
 
 @router.get("", response_model=list[RecordRow])
@@ -45,10 +44,11 @@ def list_records(
 ):
     # ponytail: filters in Python over the whole set; push status into SQL once projects reach ~50k records
     records, dup = representatives(db, query_version_id)
-    statuses = state.screen_status(db, [r.id for r in records])
+    ids = [r.id for r in records]
+    statuses = state.screen_status(db, ids, dup)
     dup_counts = Counter(dup.values())
     review = review_reps(db)
-    conflicts = state.screen_conflicts(db)
+    conflicts = state.screen_conflicts(db, ids, dup)
     rows = []
     for r in records:
         s = statuses.get(r.id, {"label": "unscreened", "reason": "", "source": ""})
@@ -62,8 +62,12 @@ def list_records(
             RecordRow(
                 id=r.id,
                 pmid=r.pmid,
+                doi=r.doi or r.raw.get("doi"),
                 title=r.title,
+                first_author=r.first_author,
+                journal=r.journal,
                 year=r.year,
+                origin=r.source,
                 status=s["label"],
                 reason=s["reason"],
                 source=s["source"],
@@ -77,17 +81,43 @@ def list_records(
 
 def _detail(db: Session, r: Record) -> dict:
     dup = state.duplicate_of(db)
-    match = db.execute(
-        select(DedupGroupMember.match_method, DedupGroupMember.score, DedupGroupMember.needs_review)
-        .join(DedupGroup, DedupGroup.id == DedupGroupMember.group_id)
-        .where(DedupGroupMember.record_id == r.id)
-    ).first()
-    dup_ids = sorted(i for i, rep in dup.items() if rep == r.id)
+    rep = dup.get(r.id, r.id)
+    members = state.group_members(dup, [rep])[rep]
+    match = next(
+        (
+            {"match_method": m, "score": s, "needs_review": n}
+            for rec, _, m, s, n in state.snapshot(db, state.current_run(db))
+            if rec == r.id
+        ),
+        None,
+    )
+    names = dict(db.execute(select(Reviewer.id, Reviewer.name)).all())
+    votes = state.screen_votes(db, members)
+    own = state.screen_status(db, members)
+    group = [
+        {
+            "id": m.id,
+            "pmid": m.pmid,
+            "title": m.title,
+            "year": m.year,
+            "journal": m.journal,
+            "origin": m.source,
+            "status": own.get(m.id),
+            "votes": [{"reviewer": names[rv], "label": label} for rec, rv, label in votes if rec == m.id],
+        }
+        for m in db.scalars(select(Record).where(Record.id.in_(members)).order_by(Record.id))
+    ]
     history = db.execute(
         select(HumanDecision, Reviewer.name)
         .join(Reviewer, Reviewer.id == HumanDecision.reviewer_id)
         .where(HumanDecision.target_type == "record", HumanDecision.target_id == r.id)
         .order_by(HumanDecision.id.desc())
+    ).all()
+    versions = db.execute(
+        select(QueryVersion.id, QueryVersion.version_number, QueryVersion.active)
+        .join(RecordQueryLink, RecordQueryLink.query_version_id == QueryVersion.id)
+        .where(RecordQueryLink.record_id == r.id)
+        .order_by(QueryVersion.version_number)
     ).all()
     return {
         "id": r.id,
@@ -98,17 +128,20 @@ def _detail(db: Session, r: Record) -> dict:
         "authors": r.authors,
         "year": r.year,
         "journal": r.journal,
+        "pages": r.pages,
         "language": r.language,
         "publication_types": r.publication_types,
         "mesh_terms": r.mesh_terms,
-        "status": state.screen_status(db, [r.id]).get(r.id),
+        "origin": r.source,
+        "source_id": r.source_id,
+        "status": state.screen_status(db, [rep], dup).get(rep),
+        "conflict": rep in state.screen_conflicts(db, [rep], dup),
         "pico": state.pico_spans(db, [r.id]).get(r.id, []),
         "duplicate_of": dup.get(r.id),
-        "match": match._asdict() if match else None,
-        "duplicates": [
-            {"id": d.id, "pmid": d.pmid, "title": d.title, "year": d.year}
-            for d in db.scalars(select(Record).where(Record.id.in_(dup_ids)).order_by(Record.id))
-        ],
+        "match": match,
+        "duplicates": [g for g in group if g["id"] != rep],
+        "group": group,
+        "versions": [v._asdict() for v in versions],
         "history": [
             {
                 "id": h.id,
@@ -135,6 +168,26 @@ def get_record(record_id: int, db: Session = Depends(get_db)):
     return _detail(db, _get(db, record_id))
 
 
+def _tag_untagged(db: Session, ids: list[int]) -> None:
+    """A record a human includes is PICO-tagged straight away if the machine never tagged it."""
+    tagged = set(
+        db.scalars(
+            select(MachineResult.record_id).where(
+                MachineResult.step == "pico",
+                MachineResult.method_version == pico.method_version(),
+                MachineResult.record_id.in_(ids),
+            )
+        )
+    )
+    todo = list(db.scalars(select(Record).where(Record.id.in_(set(ids) - tagged))))
+    for r in todo:
+        version = db.scalar(
+            select(func.max(RecordQueryLink.query_version_id)).where(RecordQueryLink.record_id == r.id)
+        )
+        if version is not None:
+            pipeline.tag_records(db, [r], version)
+
+
 @router.post("/{record_id}/decisions")
 def decide(
     record_id: int,
@@ -144,6 +197,12 @@ def decide(
 ):
     r = _get(db, record_id)
     value = body.value.model_dump()
+    targets = [r.id]
+    if body.decision_type == "screen":
+        # The decision belongs to the duplicate group: every member gets it, so the group reads the same everywhere.
+        dup = state.duplicate_of(db)
+        rep = dup.get(r.id, r.id)
+        targets = state.group_members(dup, [rep])[rep]
     if body.decision_type == "duplicate" and (target := body.value.duplicate_of) is not None:
         if target == r.id:
             raise HTTPException(422, "A record cannot be a duplicate of itself")
@@ -158,15 +217,19 @@ def decide(
                 raise HTTPException(422, f"Span {s['start']}-{s['end']} overlaps another span")
             last_end = s["end"]
             s["text"] = r.abstract[s["start"] : s["end"]]  # text is derived, never trusted from the client
-    db.add(
+    db.add_all(
         HumanDecision(
             target_type="record",
-            target_id=r.id,
+            target_id=t,
             decision_type=body.decision_type,
             value=value,
             note=body.note.strip(),
             reviewer_id=reviewer.id,
         )
+        for t in targets
     )
+    db.flush()
+    if body.decision_type == "screen" and value["label"] in ("include", "maybe"):
+        _tag_untagged(db, targets)
     db.commit()
     return _detail(db, r)

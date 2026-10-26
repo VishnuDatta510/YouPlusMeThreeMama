@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.routers import auth, export, queries, records
+from app.routers import auth, export, queries, records, screening
 
 # Render sets RENDER=true; a deployed API must never sign tokens with the public default secret.
 if os.environ.get("RENDER") and settings.jwt_secret == "dev-secret-change-me":
@@ -25,6 +25,7 @@ app.include_router(auth.router)
 app.include_router(queries.router)
 app.include_router(records.router)
 app.include_router(export.router)
+app.include_router(screening.router)
 
 
 @app.get("/health")

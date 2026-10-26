@@ -47,9 +47,11 @@ def test_preview_creates_versions(client, auth):
     )
     body = {"query_string": '"type 2 diabetes" AND metformin', "date_from": "2020-01-01"}
     v1 = client.post("/queries/preview", json=body, headers=auth).json()
-    v2 = client.post("/queries/preview", json={"query_string": "metformin NOT mice"}, headers=auth).json()
+    edit = {"query_string": "metformin NOT mice", "parent_version_id": v1["id"]}
+    v2 = client.post("/queries/preview", json=edit, headers=auth).json()
 
     assert v1["hit_count"] == 1234 and v1["version_number"] == 1 and v1["status"] == "previewed"
+    assert v1["source_hits"] == {"pubmed": 1234} and not v1["active"] and v1["parent_version_id"] is None
     assert v2["version_number"] == 2 and v2["parent_version_id"] == v1["id"]
     sent = dict(httpx.QueryParams(route.calls[0].request.content.decode()))
     assert sent["rettype"] == "count" and sent["mindate"] == "2020/01/01" and sent["tool"]
@@ -98,7 +100,7 @@ def test_fetch_is_incremental(client, auth, db):
 
     v2 = client.post("/queries/preview", json={"query_string": "metformin again"}, headers=auth).json()
     logs = client.post(f"/queries/{v2['id']}/fetch", headers=auth).json()
-    assert logs[0]["details"] == {"found": 16, "new": 0, "already_known": 16}
+    assert logs[0]["details"] == {"found": 16, "new": 0, "already_known": 16, "by_source": {"pubmed": 16}}
     assert logs[2]["details"]["screened"] == 0  # same method version, nothing re-screened
     assert efetch.call_count == 1
     assert db.scalar(select(func.count()).select_from(RecordQueryLink)) == 32
@@ -224,9 +226,10 @@ def test_export_included_csv(client, auth, loaded):
 
 def test_fuzzy_duplicate_needs_review_until_decided(client, auth, loaded, db):
     from app.models import DedupGroup, DedupGroupMember
+    from app.services import state
 
     a, b = [r["id"] for r in client.get("/records", headers=auth).json()[:2]]
-    group = DedupGroup(representative_record_id=a)
+    group = DedupGroup(representative_record_id=a, run_id=state.current_run(db))
     db.add(group)
     db.flush()
     db.add(
@@ -266,7 +269,8 @@ def test_diff_against_parent_version(client, auth):
     client.post(f"/queries/{v1['id']}/fetch", headers=auth)
     respx.reset()
     mock_pubmed(pmids[3:])
-    v2 = client.post("/queries/preview", json={"query_string": "metformin NOT mice"}, headers=auth).json()
+    edit = {"query_string": "metformin NOT mice", "parent_version_id": v1["id"]}
+    v2 = client.post("/queries/preview", json=edit, headers=auth).json()
     client.post(f"/queries/{v2['id']}/fetch", headers=auth)
 
     d = client.get(f"/queries/{v2['id']}/diff", headers=auth).json()

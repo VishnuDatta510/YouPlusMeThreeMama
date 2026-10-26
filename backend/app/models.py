@@ -30,7 +30,10 @@ class QueryVersion(Base):
     date_to: Mapped[date | None] = mapped_column(Date)
     sources: Mapped[list] = mapped_column(JSONB, default=lambda: ["pubmed"])
     hit_count: Mapped[int] = mapped_column(Integer, default=0)
+    source_hits: Mapped[dict] = mapped_column(JSONB, default=dict)  # {"pubmed": 120, "europepmc": 95}
     status: Mapped[str] = mapped_column(String(20), default="previewed")  # previewed / fetched
+    # In the working set: its records are deduplicated, listed and exported. An edit replaces its parent.
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("reviewers.id"))
     created_at: Mapped[datetime] = created_at_col()
 
@@ -51,6 +54,7 @@ class Record(Base):
     publication_types: Mapped[list] = mapped_column(JSONB, default=list)
     mesh_terms: Mapped[list] = mapped_column(JSONB, default=list)
     source: Mapped[str] = mapped_column(String(30), default="pubmed")
+    source_id: Mapped[str | None] = mapped_column(String(60), unique=True)  # Europe PMC id when no PMID
     raw: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = created_at_col()
 
@@ -62,8 +66,11 @@ class RecordQueryLink(Base):
 
 
 class DedupGroup(Base):
+    """One snapshot per dedupe run (run_id); the latest successful run is the current grouping. Old ones are kept."""
+
     __tablename__ = "dedup_groups"
     id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("run_log.id"), index=True)
     representative_record_id: Mapped[int] = mapped_column(ForeignKey("records.id"))
     created_at: Mapped[datetime] = created_at_col()
 
@@ -95,9 +102,9 @@ class HumanDecision(Base):
 
     __tablename__ = "human_decisions"
     id: Mapped[int] = mapped_column(primary_key=True)
-    target_type: Mapped[str] = mapped_column(String(20))  # record / group / pico_span
+    target_type: Mapped[str] = mapped_column(String(20))  # record / project
     target_id: Mapped[int] = mapped_column(Integer, index=True)
-    decision_type: Mapped[str] = mapped_column(String(20))  # screen / duplicate / pico
+    decision_type: Mapped[str] = mapped_column(String(20))  # screen / duplicate / pico / criteria
     value: Mapped[dict] = mapped_column(JSONB)
     note: Mapped[str] = mapped_column(Text, default="")
     reviewer_id: Mapped[int] = mapped_column(ForeignKey("reviewers.id"))
