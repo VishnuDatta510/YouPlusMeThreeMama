@@ -40,6 +40,7 @@ def list_records(
     status: str | None = None,
     query_version_id: int | None = None,
     needs_review: bool = False,
+    conflict: bool = False,
     db: Session = Depends(get_db),
 ):
     # ponytail: filters in Python over the whole set; push status into SQL once projects reach ~50k records
@@ -47,10 +48,15 @@ def list_records(
     statuses = state.screen_status(db, [r.id for r in records])
     dup_counts = Counter(dup.values())
     review = review_reps(db)
+    conflicts = state.screen_conflicts(db)
     rows = []
     for r in records:
         s = statuses.get(r.id, {"label": "unscreened", "reason": "", "source": ""})
-        if (status and s["label"] != status) or (needs_review and r.id not in review):
+        if (
+            (status and s["label"] != status)
+            or (needs_review and r.id not in review)
+            or (conflict and r.id not in conflicts)
+        ):
             continue
         rows.append(
             RecordRow(
@@ -63,6 +69,7 @@ def list_records(
                 source=s["source"],
                 duplicates=dup_counts[r.id],
                 needs_review=r.id in review,
+                conflict=r.id in conflicts,
             )
         )
     return rows

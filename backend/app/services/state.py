@@ -57,3 +57,17 @@ def duplicate_of(db: Session) -> dict[int, int]:
         else:
             out.pop(record_id, None)
     return out
+
+
+def screen_conflicts(db: Session) -> set[int]:
+    """Records whose reviewers' latest screening labels disagree. The newest decision still wins until resolved."""
+    rows = db.execute(
+        select(HumanDecision.target_id, HumanDecision.value)
+        .where(HumanDecision.target_type == "record", HumanDecision.decision_type == "screen")
+        .distinct(HumanDecision.target_id, HumanDecision.reviewer_id)
+        .order_by(HumanDecision.target_id, HumanDecision.reviewer_id, HumanDecision.id.desc())
+    ).all()
+    labels: dict[int, set[str]] = {}
+    for target_id, value in rows:
+        labels.setdefault(target_id, set()).add(value["label"])
+    return {t for t, ls in labels.items() if len(ls) > 1}

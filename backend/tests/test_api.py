@@ -290,3 +290,22 @@ def test_restore_appends_an_earlier_value(client, auth, loaded):
     )
     assert r.status_code == 200
     assert r.json()["pico"] == first["pico"] and len(r.json()["history"]) == 3
+
+
+def test_reviewer_disagreement_is_flagged(client, auth, loaded, db):
+    from app.auth import create_token, hash_password
+    from app.models import Reviewer
+
+    other = Reviewer(email="b@example.com", password_hash=hash_password("x"), name="B")
+    db.add(other)
+    db.commit()
+    auth_b = {"Authorization": f"Bearer {create_token(other.id)}"}
+    rid = client.get("/records", headers=auth).json()[0]["id"]
+    url = f"/records/{rid}/decisions"
+    client.post(url, json={"decision_type": "screen", "value": {"label": "include"}}, headers=auth)
+    assert client.get("/records?conflict=true", headers=auth).json() == []
+    client.post(url, json={"decision_type": "screen", "value": {"label": "maybe"}}, headers=auth_b)
+    flagged = client.get("/records?conflict=true", headers=auth).json()
+    assert [r["id"] for r in flagged] == [rid] and flagged[0]["status"] == "maybe"
+    client.post(url, json={"decision_type": "screen", "value": {"label": "maybe"}}, headers=auth)
+    assert client.get("/records?conflict=true", headers=auth).json() == []

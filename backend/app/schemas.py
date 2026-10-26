@@ -70,6 +70,7 @@ class RecordRow(BaseModel):
     source: str  # machine / human / ""
     duplicates: int
     needs_review: bool  # has a fuzzy duplicate awaiting a reviewer's decision
+    conflict: bool  # reviewers' latest screening labels disagree
 
 
 class ScreenValue(BaseModel):

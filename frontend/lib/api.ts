@@ -79,7 +79,7 @@ export const api = {
   runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
   runs: (versionId: number) => json<RunLog[]>(`/queries/${versionId}/runs`),
   diff: (versionId: number) => json<VersionDiff>(`/queries/${versionId}/diff`),
-  records: (filters: { status?: string; query_version_id?: string; needs_review?: string }) => {
+  records: (filters: { status?: string; query_version_id?: string; needs_review?: string; conflict?: string }) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
     return json<RecordRow[]>(`/records?${qs}`);
   },
@@ -109,6 +109,7 @@ export type RecordRow = {
   source: "machine" | "human" | "";
   duplicates: number;
   needs_review: boolean;
+  conflict: boolean;
 };
 
 export type Decision =

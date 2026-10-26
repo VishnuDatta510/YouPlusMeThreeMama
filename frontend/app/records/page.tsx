@@ -10,6 +10,7 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
   const [version, setVersion] = useState(typeof initialVersion === "string" ? initialVersion : "");
   const [status, setStatus] = useState("");
   const [review, setReview] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const [versions, setVersions] = useState<QueryVersion[]>([]);
   const [rows, setRows] = useState<RecordRow[] | null>(null);
   const [error, setError] = useState("");
@@ -19,10 +20,10 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
   }, []);
   useEffect(() => {
     api
-      .records({ status, query_version_id: version, needs_review: review ? "true" : "" })
+      .records({ status, query_version_id: version, needs_review: review ? "true" : "", conflict: conflict ? "true" : "" })
       .then(setRows)
       .catch((e) => setError(e.message));
-  }, [status, version, review]);
+  }, [status, version, review, conflict]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,6 +54,10 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
           <label className="flex items-center gap-2 py-2">
             <input type="checkbox" checked={review} onChange={(e) => setReview(e.target.checked)} />
             Possible duplicates to review
+          </label>
+          <label className="flex items-center gap-2 py-2">
+            <input type="checkbox" checked={conflict} onChange={(e) => setConflict(e.target.checked)} />
+            Reviewer conflicts
           </label>
           <button
             className="btn"
@@ -91,6 +96,14 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
                 <td>{r.year ?? "—"}</td>
                 <td>
                   <StatusBadge status={r.status} />
+                  {r.conflict && (
+                    <span
+                      className="mt-1 block w-fit rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800 dark:bg-red-900 dark:text-red-100"
+                      title="Reviewers disagree; the newest decision is shown. See the record's history."
+                    >
+                      conflict
+                    </span>
+                  )}
                 </td>
                 <td className="pr-3 text-neutral-600 dark:text-neutral-400">{r.reason}</td>
                 <td>{r.source}</td>
