@@ -18,7 +18,7 @@ from app.models import (
     RunLog,
 )
 from app.services import dedupe as dedupe_service
-from app.services import pubmed, screening
+from app.services import pico, pubmed, screening, state
 
 log = logging.getLogger(__name__)
 EFETCH_BATCH = 100
@@ -129,7 +129,28 @@ def screen(db: Session, qv: QueryVersion) -> dict:
     return {"method_version": method, "screened": sum(counts.values()), **counts}
 
 
-STEPS = [("fetch", fetch), ("dedupe", dedupe), ("screen", screen)]
+def tag_pico(db: Session, qv: QueryVersion) -> dict:
+    method = pico.method_version()
+    todo = [r for r in _records_without_result(db, qv, "pico", method) if r.abstract]
+    status = state.screen_status(db, [r.id for r in todo])
+    tagged = 0
+    for r in todo:
+        if status.get(r.id, {}).get("label") in ("include", "maybe"):
+            db.add(
+                MachineResult(
+                    record_id=r.id,
+                    query_version_id=qv.id,
+                    step="pico",
+                    method_version=method,
+                    output=pico.extract_pico(r.abstract),
+                )
+            )
+            tagged += 1
+    db.commit()
+    return {"method_version": method, "tagged": tagged}
+
+
+STEPS = [("fetch", fetch), ("dedupe", dedupe), ("screen", screen), ("pico", tag_pico)]
 
 
 def run(db: Session, qv: QueryVersion) -> list[RunLog]:

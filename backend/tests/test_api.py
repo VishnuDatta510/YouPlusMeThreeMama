@@ -81,11 +81,13 @@ def test_fetch_is_incremental(client, auth, db):
     efetch = mock_pubmed(pmids)
     v1 = client.post("/queries/preview", json={"query_string": "metformin"}, headers=auth).json()
     logs = client.post(f"/queries/{v1['id']}/fetch", headers=auth).json()
-    assert [(s["step"], s["status"]) for s in logs][:3] == [
+    assert [(s["step"], s["status"]) for s in logs] == [
         ("fetch", "ok"),
         ("dedupe", "ok"),
         ("screen", "ok"),
+        ("pico", "ok"),
     ]
+    assert logs[3]["details"]["tagged"] > 0
     assert logs[0]["details"]["new"] == 16
     assert db.scalar(select(func.count()).select_from(Record)) == 16
     screened = logs[2]["details"]
