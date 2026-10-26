@@ -98,3 +98,8 @@ def test_results_lines_and_statistics_are_not_tagged():
         ("C", "placebo"),
         ("P", "women with PCOS"),
     }
+
+
+def test_group_suffixes_and_following_clauses_are_trimmed():
+    assert ("C", "PIOMET") in tags("Women were randomized to MET or PIOMET groups.")
+    assert ("P", "women with PCOS") in tags("In women with PCOS, PIOMET treatment may improve ovulation.")

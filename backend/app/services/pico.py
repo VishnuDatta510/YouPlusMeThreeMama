@@ -38,6 +38,7 @@ _CMP = (  # comparators that need no trigger
 )
 _P_STOP = (
     r"were|was|underwent|had|has|have|benefits?|received|receiving|treated|randomi[sz]ed|assigned|(?<!\d\s)to"
+    r"|may|might|can|could|should|will|would"
 )
 # I and C start with a word, not a number or a group label: "vs -2.05", "compared to baseline", "both arms"
 _NOT_ARM = (
@@ -82,7 +83,9 @@ PATTERNS = [
 MAX_SPAN = 200
 # Results sentences restate the arms around numbers ("EMPA vs PGZ (-4.4 ± 2.39 vs -2.05"), so they are not tagged.
 _RESULTS = re.compile(r"^(?:RESULTS?|FINDINGS)\b[^:\n]{0,40}:[^\n]*", re.I | re.M)
-_TAIL = re.compile(r"(?:\s+(?:who|which|that|whose|those|and|or|of|in|with))+\s*$|[\s,(]+$", re.I)
+_TAIL = re.compile(
+    r"(?:\s+(?:who|which|that|whose|those|and|or|of|in|with|groups?|arms?))+\s*$|[\s,(]+$", re.I
+)  # "PIOMET groups" -> "PIOMET"
 
 
 def _rules(text: str) -> list[Span]:
@@ -95,6 +98,8 @@ def _rules(text: str) -> list[Span]:
                     continue
                 start = m.start(kind)
                 snippet = value[:MAX_SPAN]
+                if kind == "P":  # "women with PCOS, PIOMET treatment": a new clause starts at the acronym
+                    snippet = re.split(r",\s+(?=[A-Z]{2,})", snippet)[0]
                 if snippet.count("(") > snippet.count(
                     ")"
                 ):  # "medications (metformin": cut at the open bracket
@@ -114,7 +119,7 @@ def _rules(text: str) -> list[Span]:
 
 
 def method_version() -> str:
-    return f"{settings.pico_method}-v4"  # bump when the rules change so the next run re-tags
+    return f"{settings.pico_method}-v5"  # bump when the rules change so the next run re-tags
 
 
 def extract_pico(text: str) -> list[Span]:
