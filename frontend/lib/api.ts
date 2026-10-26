@@ -44,8 +44,25 @@ const post = <T>(path: string, body?: unknown) =>
 
 export type Reviewer = { id: number; email: string; name: string };
 
+export type QueryVersion = {
+  id: number;
+  version_number: number;
+  parent_version_id: number | null;
+  query_string: string;
+  date_from: string | null;
+  date_to: string | null;
+  sources: string[];
+  hit_count: number;
+  status: "previewed" | "fetched";
+  created_at: string;
+};
+
+export type QueryIn = { query_string: string; date_from?: string | null; date_to?: string | null };
+
 export const api = {
   login: (email: string, password: string) =>
     post<{ access_token: string }>("/auth/login", { email, password }),
   me: () => json<Reviewer>("/auth/me"),
+  preview: (q: QueryIn) => post<QueryVersion>("/queries/preview", q),
+  versions: () => json<QueryVersion[]>("/queries"),
 };
