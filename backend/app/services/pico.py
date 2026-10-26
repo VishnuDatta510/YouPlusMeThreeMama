@@ -38,7 +38,7 @@ _CMP = (  # comparators that need no trigger
 )
 _P_STOP = (
     r"were|was|underwent|had|has|have|benefits?|received|receiving|treated|randomi[sz]ed|assigned|(?<!\d\s)to"
-    r"|may|might|can|could|should|will|would"
+    r"|may|might|can|could|should|will|would|is|are|showed|shows"
 )
 # I and C start with a word, not a number or a group label: "vs -2.05", "compared to baseline", "both arms"
 _NOT_ARM = (
@@ -98,8 +98,8 @@ def _rules(text: str) -> list[Span]:
                     continue
                 start = m.start(kind)
                 snippet = value[:MAX_SPAN]
-                if kind == "P":  # "women with PCOS, PIOMET treatment": a new clause starts at the acronym
-                    snippet = re.split(r",\s+(?=[A-Z]{2,})", snippet)[0]
+                if kind == "P":  # "patients with T2D, of whom 513": a comma ends the population
+                    snippet = snippet.split(",")[0]
                 if snippet.count("(") > snippet.count(
                     ")"
                 ):  # "medications (metformin": cut at the open bracket
@@ -107,6 +107,8 @@ def _rules(text: str) -> list[Span]:
                 elif snippet.count(")") > snippet.count("("):  # "insulin glargine)"
                     snippet = snippet[: snippet.index(")")]
                 snippet = _TAIL.sub("", snippet)
+                if kind == "P" and " " not in snippet.strip():  # a bare "patients" says nothing
+                    continue
                 found.append(Span(type=kind, start=start, end=start + len(snippet), text=snippet))
     # Keep spans non-overlapping so the UI can highlight them: earliest start wins, then longest,
     # then C over I ("received usual care" is the comparator arm).
@@ -119,7 +121,7 @@ def _rules(text: str) -> list[Span]:
 
 
 def method_version() -> str:
-    return f"{settings.pico_method}-v5"  # bump when the rules change so the next run re-tags
+    return f"{settings.pico_method}-v6"  # bump when the rules change so the next run re-tags
 
 
 def extract_pico(text: str) -> list[Span]:

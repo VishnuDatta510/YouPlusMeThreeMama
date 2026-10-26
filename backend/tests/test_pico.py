@@ -103,3 +103,9 @@ def test_results_lines_and_statistics_are_not_tagged():
 def test_group_suffixes_and_following_clauses_are_trimmed():
     assert ("C", "PIOMET") in tags("Women were randomized to MET or PIOMET groups.")
     assert ("P", "women with PCOS") in tags("In women with PCOS, PIOMET treatment may improve ovulation.")
+
+
+def test_population_ends_at_a_comma_or_verb_and_needs_more_than_a_noun():
+    assert ("P", "patients with T2D") in tags("We followed 900 patients with T2D, of whom 513 were women.")
+    assert ("P", "women with diabetes") in tags("Pregnant women with diabetes are strongly advised to eat.")
+    assert not {t for t in tags("Patients who were older had more falls.") if t[0] == "P"}
