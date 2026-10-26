@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.routers import auth, queries, records
+from app.routers import auth, export, queries, records
 
 app = FastAPI(title="Mini-Rayyan API")
 app.add_middleware(
@@ -17,6 +17,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(queries.router)
 app.include_router(records.router)
+app.include_router(export.router)
 
 
 @app.get("/health")

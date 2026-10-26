@@ -1,3 +1,5 @@
+import csv
+import io
 from pathlib import Path
 
 import httpx
@@ -182,3 +184,31 @@ def test_pico_decision_replaces_spans(client, auth, loaded):
     bad = {"decision_type": "pico", "value": {"spans": [{"type": "O", "start": 0, "end": len(abstract) + 1}]}}
     assert client.post(url, json=bad, headers=auth).status_code == 422
     assert client.get("/records/9999", headers=auth).status_code == 404
+
+
+def test_export_included_csv(client, auth, loaded):
+    rows = client.get("/records", headers=auth).json()
+    included = [r for r in rows if r["status"] == "include"]
+    excluded = next(r for r in rows if r["status"] == "exclude")
+    client.post(
+        f"/records/{included[0]['id']}/decisions",
+        json={"decision_type": "screen", "value": {"label": "exclude", "reason": "off topic"}},
+        headers=auth,
+    )
+    client.post(
+        f"/records/{excluded['id']}/decisions",
+        json={"decision_type": "screen", "value": {"label": "include"}},
+        headers=auth,
+    )
+    res = client.get("/export/included.csv", headers=auth)
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/csv")
+    out = list(csv.DictReader(io.StringIO(res.text)))
+    assert {r["pmid"] for r in out} == {r["pmid"] for r in included[1:]} | {excluded["pmid"]}
+    assert list(out[0]) == ["pmid", "doi", "title", "authors", "year", "journal"] + [
+        "population",
+        "intervention",
+        "comparator",
+        "outcome",
+    ]
+    assert any(r["population"] or r["intervention"] or r["outcome"] for r in out)
+    assert client.get("/export/included.csv").status_code == 401

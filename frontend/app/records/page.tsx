@@ -49,6 +49,12 @@ export default function RecordsPage({ searchParams }: PageProps<"/records">) {
               ))}
             </select>
           </label>
+          <button
+            className="btn"
+            onClick={() => api.downloadIncludedCsv(version).catch((e) => setError(e.message))}
+          >
+            Export included (CSV)
+          </button>
         </div>
       </div>
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}

@@ -80,6 +80,14 @@ export const api = {
   },
   record: (id: number | string) => json<RecordDetail>(`/records/${id}`),
   decide: (id: number, d: Decision) => post<RecordDetail>(`/records/${id}/decisions`, d),
+  // Fetched as a blob (not a plain link) because the endpoint needs the bearer token.
+  downloadIncludedCsv: async (queryVersionId?: string) => {
+    const qs = queryVersionId ? `?query_version_id=${queryVersionId}` : "";
+    const url = URL.createObjectURL(await (await request(`/export/included.csv${qs}`)).blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: "included.csv" });
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export type Label = "include" | "exclude" | "maybe";
