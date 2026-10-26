@@ -62,12 +62,13 @@ export default function RecordPage({ params }: PageProps<"/records/[id]">) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-6">
-          <section>
-            <h2 className="mb-2 font-semibold">Abstract</h2>
-            <Legend />
-            <Abstract text={record.abstract} spans={record.pico} />
-          </section>
-          <PicoEditor key={JSON.stringify(record.pico)} spans={record.pico} busy={busy} onSave={decide} />
+          <PicoEditor
+            key={JSON.stringify(record.pico)}
+            text={record.abstract}
+            spans={record.pico}
+            busy={busy}
+            onSave={decide}
+          />
         </div>
 
         <aside className="flex flex-col gap-6">
@@ -109,61 +110,117 @@ function Abstract({ text, spans }: { text: string; spans: Span[] }) {
     cursor = s.end;
   }
   parts.push(text.slice(cursor));
-  return <p className="whitespace-pre-line leading-relaxed">{parts}</p>;
+  return (
+    <p id="abstract" className="whitespace-pre-line leading-relaxed">
+      {parts}
+    </p>
+  );
 }
 
-function PicoEditor({ spans, busy, onSave }: SaveProps & { spans: Span[] }) {
+/** Character offsets of the current text selection inside the abstract, trimmed of surrounding whitespace. */
+function selectionOffsets(): { start: number; end: number } | null {
+  const root = document.getElementById("abstract");
+  const sel = window.getSelection();
+  if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
+  const before = document.createRange();
+  before.setStart(root, 0);
+  before.setEnd(range.startContainer, range.startOffset);
+  const raw = range.toString();
+  const start = before.toString().length + (raw.length - raw.trimStart().length);
+  const end = start + raw.trim().length;
+  return end > start ? { start, end } : null;
+}
+
+function PicoEditor({ text, spans, busy, onSave }: SaveProps & { text: string; spans: Span[] }) {
   const [draft, setDraft] = useState(spans);
+  const [hint, setHint] = useState("");
   const dirty = JSON.stringify(draft) !== JSON.stringify(spans);
+
+  function addSelection(type: PicoType) {
+    const o = selectionOffsets();
+    if (!o) return setHint("Select some text in the abstract first.");
+    if (draft.some((s) => o.start < s.end && s.start < o.end)) return setHint("That overlaps an existing span.");
+    setHint("");
+    setDraft([...draft, { type, ...o, text: text.slice(o.start, o.end) }].sort((a, b) => a.start - b.start));
+    window.getSelection()?.removeAllRanges();
+  }
+
   return (
-    <section>
-      <h2 className="mb-2 font-semibold">PICO spans</h2>
-      {draft.length === 0 ? (
-        <p className="text-sm text-neutral-500">No spans tagged.</p>
-      ) : (
-        <ul className="flex flex-col gap-2 text-sm">
-          {draft.map((s, i) => (
-            <li key={`${s.start}-${s.end}`} className="flex items-start gap-2">
-              <select
-                aria-label="Span type"
-                className="input py-0.5"
-                value={s.type}
-                onChange={(e) =>
-                  setDraft(draft.map((d, j) => (j === i ? { ...d, type: e.target.value as PicoType } : d)))
-                }
+    <>
+      <section>
+        <h2 className="mb-2 font-semibold">Abstract</h2>
+        <Legend />
+        <Abstract text={text} spans={draft} />
+        {text && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-neutral-500">Tag selected text as</span>
+            {(Object.keys(PICO) as PicoType[]).map((k) => (
+              <button
+                key={k}
+                className={`btn py-0.5 ${PICO[k].className}`}
+                title={PICO[k].label}
+                // keep the text selection alive while clicking
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => addSelection(k)}
               >
-                {Object.keys(PICO).map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
-              <span className={`flex-1 rounded px-1 ${PICO[s.type].className}`}>{s.text}</span>
-              <button className="btn py-0.5" onClick={() => setDraft(draft.filter((_, j) => j !== i))}>
-                Remove
+                {k}
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {dirty && (
-        <div className="mt-3 flex gap-2">
-          <button
-            className="btn-primary"
-            disabled={busy}
-            onClick={() =>
-              onSave({
-                decision_type: "pico",
-                value: { spans: draft.map(({ type, start, end }) => ({ type, start, end })) },
-              })
-            }
-          >
-            Save PICO changes
-          </button>
-          <button className="btn" onClick={() => setDraft(spans)}>
-            Discard
-          </button>
-        </div>
-      )}
-    </section>
+            ))}
+            {hint && <span className="text-red-600">{hint}</span>}
+          </div>
+        )}
+      </section>
+      <section>
+        <h2 className="mb-2 font-semibold">PICO spans</h2>
+        {draft.length === 0 ? (
+          <p className="text-sm text-neutral-500">No spans tagged.</p>
+        ) : (
+          <ul className="flex flex-col gap-2 text-sm">
+            {draft.map((s, i) => (
+              <li key={`${s.start}-${s.end}`} className="flex items-start gap-2">
+                <select
+                  aria-label="Span type"
+                  className="input py-0.5"
+                  value={s.type}
+                  onChange={(e) =>
+                    setDraft(draft.map((d, j) => (j === i ? { ...d, type: e.target.value as PicoType } : d)))
+                  }
+                >
+                  {Object.keys(PICO).map((k) => (
+                    <option key={k}>{k}</option>
+                  ))}
+                </select>
+                <span className={`flex-1 rounded px-1 ${PICO[s.type].className}`}>{s.text}</span>
+                <button className="btn py-0.5" onClick={() => setDraft(draft.filter((_, j) => j !== i))}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {dirty && (
+          <div className="mt-3 flex gap-2">
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={() =>
+                onSave({
+                  decision_type: "pico",
+                  value: { spans: draft.map(({ type, start, end }) => ({ type, start, end })) },
+                })
+              }
+            >
+              Save PICO changes
+            </button>
+            <button className="btn" onClick={() => setDraft(spans)}>
+              Discard
+            </button>
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 

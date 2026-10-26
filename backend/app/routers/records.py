@@ -142,9 +142,14 @@ def decide(
             raise HTTPException(422, "A record cannot be a duplicate of itself")
         _get(db, target)
     if body.decision_type == "pico":
+        value["spans"].sort(key=lambda s: s["start"])
+        last_end = 0
         for s in value["spans"]:
             if s["end"] <= s["start"] or s["end"] > len(r.abstract):
                 raise HTTPException(422, f"Span {s['start']}-{s['end']} is outside the abstract")
+            if s["start"] < last_end:
+                raise HTTPException(422, f"Span {s['start']}-{s['end']} overlaps another span")
+            last_end = s["end"]
             s["text"] = r.abstract[s["start"] : s["end"]]  # text is derived, never trusted from the client
     db.add(
         HumanDecision(

@@ -184,6 +184,13 @@ def test_pico_decision_replaces_spans(client, auth, loaded):
     assert detail["pico"] == [{"type": "P", "start": 0, "end": 10, "text": abstract[:10]}]
     bad = {"decision_type": "pico", "value": {"spans": [{"type": "O", "start": 0, "end": len(abstract) + 1}]}}
     assert client.post(url, json=bad, headers=auth).status_code == 422
+    overlap = [{"type": "P", "start": 0, "end": 10}, {"type": "I", "start": 5, "end": 15}]
+    assert (
+        client.post(
+            url, json={"decision_type": "pico", "value": {"spans": overlap}}, headers=auth
+        ).status_code
+        == 422
+    )
     assert client.get("/records/9999", headers=auth).status_code == 404
 
 
