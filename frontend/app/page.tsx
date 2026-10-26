@@ -201,6 +201,13 @@ function Composer({
   );
   const toggle = (s: Source) =>
     setSources(sources.includes(s) ? sources.filter((x) => x !== s) : [...sources, s]);
+  // An edit that changes nothing would only add a copy of the version it came from.
+  const unchanged =
+    !!editing &&
+    query.trim() === editing.query_string.trim() &&
+    dateFrom === (editing.date_from ?? "") &&
+    dateTo === (editing.date_to ?? "") &&
+    [...sources].sort().join() === [...editing.sources].sort().join();
 
   return (
     <form
@@ -263,7 +270,7 @@ function Composer({
                   onChange={() => toggle(s)}
                 />
                 <span
-                  className={`flex size-3.5 items-center justify-center rounded-[4px] border ${
+                  className={`flex size-3.5 items-center justify-center rounded-sm border ${
                     sources.includes(s) ? "border-accent bg-accent" : "border-faint"
                   }`}
                   aria-hidden
@@ -287,7 +294,7 @@ function Composer({
           <span className="label">to</span>
           <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </label>
-        <button className="btn-primary ml-auto" disabled={disabled || sources.length === 0 || !query.trim()}>
+        <button className="btn-primary ml-auto" disabled={disabled || sources.length === 0 || !query.trim() || unchanged}>
           {busy && <Spinner />}
           {busy ? "Counting hits" : editing ? "Save as new version" : "Count hits"}
         </button>
@@ -380,7 +387,7 @@ function VersionItem({
         <article className={`panel p-4 sm:p-5 ${v.active ? "" : "bg-surface/60"}`}>
           <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
             <div className="min-w-0 flex-1">
-              <p className={`font-mono text-[14px] leading-relaxed break-words ${imported ? "text-muted" : ""}`}>
+              <p className={`font-mono text-[14px] leading-relaxed wrap-break-word ${imported ? "text-muted" : ""}`}>
                 {v.query_string}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
