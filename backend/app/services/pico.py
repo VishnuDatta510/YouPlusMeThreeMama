@@ -18,9 +18,9 @@ _C_TRIGGERS = r"compared (?:with|to)|versus|vs\.|placebo"
 
 
 def _clause(stop_words: str = "", stop_chars: str = ".;\n") -> str:
-    """Rest of the clause, ending before a stop char or the next PICO trigger."""
+    """Rest of the clause, ending before a stop char or the next PICO trigger. Decimals like 6.8 don't stop it."""
     guard = rf"(?!\b(?:{stop_words})\b)" if stop_words else ""
-    return rf"(?:{guard}[^{stop_chars}])*"
+    return rf"(?:{guard}(?:[^{stop_chars}]|(?<=\d)\.(?=\d)))*"
 
 
 PATTERNS = {
@@ -57,7 +57,7 @@ def _rules(text: str) -> list[Span]:
 
 
 def method_version() -> str:
-    return f"{settings.pico_method}-v1"
+    return f"{settings.pico_method}-v2"  # bump when the rules change so the next run re-tags
 
 
 def extract_pico(text: str) -> list[Span]:

@@ -65,7 +65,7 @@ export type RunLog = {
   details: Record<string, unknown>;
 };
 
-export type QueryIn ={ query_string: string; date_from?: string | null; date_to?: string | null };
+export type QueryIn = { query_string: string; date_from?: string | null; date_to?: string | null };
 
 export const api = {
   login: (email: string, password: string) =>
@@ -74,4 +74,57 @@ export const api = {
   preview: (q: QueryIn) => post<QueryVersion>("/queries/preview", q),
   versions: () => json<QueryVersion[]>("/queries"),
   runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
+  records: (filters: { status?: string; query_version_id?: string }) => {
+    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
+    return json<RecordRow[]>(`/records?${qs}`);
+  },
+  record: (id: number | string) => json<RecordDetail>(`/records/${id}`),
+  decide: (id: number, d: Decision) => post<RecordDetail>(`/records/${id}/decisions`, d),
+};
+
+export type Label = "include" | "exclude" | "maybe";
+export type PicoType = "P" | "I" | "C" | "O";
+export type Span = { type: PicoType; start: number; end: number; text: string };
+
+export type RecordRow = {
+  id: number;
+  pmid: string | null;
+  title: string;
+  year: number | null;
+  status: Label | "unscreened";
+  reason: string;
+  source: "machine" | "human" | "";
+  duplicates: number;
+};
+
+export type Decision =
+  | { decision_type: "screen"; value: { label: Label; reason: string }; note?: string }
+  | { decision_type: "duplicate"; value: { duplicate_of: number | null }; note?: string }
+  | { decision_type: "pico"; value: { spans: Omit<Span, "text">[] }; note?: string };
+
+export type RecordDetail = {
+  id: number;
+  pmid: string | null;
+  doi: string | null;
+  title: string;
+  abstract: string;
+  authors: string[];
+  year: number | null;
+  journal: string;
+  language: string;
+  publication_types: string[];
+  mesh_terms: string[];
+  status: { label: Label; reason: string; source: "machine" | "human" } | null;
+  pico: Span[];
+  duplicate_of: number | null;
+  match: { match_method: string; score: number; needs_review: boolean } | null;
+  duplicates: { id: number; pmid: string | null; title: string; year: number | null }[];
+  history: {
+    id: number;
+    decision_type: Decision["decision_type"];
+    value: Record<string, unknown>;
+    note: string;
+    reviewer: string;
+    created_at: string;
+  }[];
 };

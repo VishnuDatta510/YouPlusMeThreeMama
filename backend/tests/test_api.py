@@ -108,3 +108,77 @@ def test_preview_pubmed_error_is_502(client, auth):
     respx.post(f"{EUTILS}/esearch.fcgi").mock(return_value=httpx.Response(400, text="bad"))
     v = client.post("/queries/preview", json={"query_string": "x"}, headers=auth)
     assert v.status_code == 502
+
+
+@pytest.fixture
+def loaded(client, auth):
+    with respx.mock:
+        mock_pubmed([r["pmid"] for r in parse_efetch(FIXTURE.read_bytes())])
+        v = client.post("/queries/preview", json={"query_string": "metformin"}, headers=auth).json()
+        client.post(f"/queries/{v['id']}/fetch", headers=auth)
+    return v
+
+
+def test_records_list_and_status_filter(client, auth, loaded):
+    rows = client.get("/records", headers=auth).json()
+    assert len(rows) == 16 and all(r["source"] == "machine" for r in rows)
+    excluded = client.get("/records?status=exclude", headers=auth).json()
+    assert excluded and all(r["status"] == "exclude" and r["reason"] for r in excluded)
+    assert client.get(f"/records?query_version_id={loaded['id'] + 99}", headers=auth).json() == []
+
+
+def test_screen_decision_overrides_machine_and_is_logged(client, auth, loaded):
+    rid = client.get("/records?status=exclude", headers=auth).json()[0]["id"]
+    url = f"/records/{rid}/decisions"
+    assert (
+        client.post(
+            url, json={"decision_type": "screen", "value": {"label": "exclude"}}, headers=auth
+        ).status_code
+        == 422
+    )
+    body = {"decision_type": "screen", "value": {"label": "include", "reason": "relevant"}, "note": "checked"}
+    detail = client.post(url, json=body, headers=auth).json()
+    assert detail["status"] == {"label": "include", "reason": "relevant", "source": "human"}
+    detail = client.post(
+        url, json={"decision_type": "screen", "value": {"label": "maybe"}}, headers=auth
+    ).json()
+    assert detail["status"]["label"] == "maybe"
+    assert [h["value"]["label"] for h in detail["history"]] == ["maybe", "include"]
+    assert detail["history"][1]["note"] == "checked" and detail["history"][0]["reviewer"] == "Demo Reviewer"
+
+
+def test_duplicate_decision_hides_record(client, auth, loaded):
+    a, b = [r["id"] for r in client.get("/records", headers=auth).json()[:2]]
+    url = f"/records/{b}/decisions"
+    assert (
+        client.post(
+            url, json={"decision_type": "duplicate", "value": {"duplicate_of": b}}, headers=auth
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            url, json={"decision_type": "duplicate", "value": {"duplicate_of": 9999}}, headers=auth
+        ).status_code
+        == 404
+    )
+    detail = client.post(
+        url, json={"decision_type": "duplicate", "value": {"duplicate_of": a}}, headers=auth
+    ).json()
+    assert detail["duplicate_of"] == a
+    rows = {r["id"]: r for r in client.get("/records", headers=auth).json()}
+    assert b not in rows and rows[a]["duplicates"] == 1
+    client.post(url, json={"decision_type": "duplicate", "value": {"duplicate_of": None}}, headers=auth)
+    assert b in {r["id"] for r in client.get("/records", headers=auth).json()}
+
+
+def test_pico_decision_replaces_spans(client, auth, loaded):
+    rid = next(r["id"] for r in client.get("/records?status=include", headers=auth).json())
+    abstract = client.get(f"/records/{rid}", headers=auth).json()["abstract"]
+    url = f"/records/{rid}/decisions"
+    spans = [{"type": "P", "start": 0, "end": 10}]
+    detail = client.post(url, json={"decision_type": "pico", "value": {"spans": spans}}, headers=auth).json()
+    assert detail["pico"] == [{"type": "P", "start": 0, "end": 10, "text": abstract[:10]}]
+    bad = {"decision_type": "pico", "value": {"spans": [{"type": "O", "start": 0, "end": len(abstract) + 1}]}}
+    assert client.post(url, json=bad, headers=auth).status_code == 422
+    assert client.get("/records/9999", headers=auth).status_code == 404

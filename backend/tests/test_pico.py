@@ -37,3 +37,7 @@ def test_spans_split_at_next_trigger_and_never_overlap():
     ]
     assert all(a["end"] <= b["start"] for a, b in zip(spans, spans[1:]))
     assert extract_pico("") == []
+
+
+def test_decimals_do_not_end_a_span():
+    assert ("P", "adults with HbA1c 6.8-8.5%") in tags("We enrolled adults with HbA1c 6.8-8.5%. Then...")
