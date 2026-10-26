@@ -74,6 +74,7 @@ export const api = {
   preview: (q: QueryIn) => post<QueryVersion>("/queries/preview", q),
   versions: () => json<QueryVersion[]>("/queries"),
   runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
+  runs: (versionId: number) => json<RunLog[]>(`/queries/${versionId}/runs`),
   records: (filters: { status?: string; query_version_id?: string; needs_review?: string }) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
     return json<RecordRow[]>(`/records?${qs}`);

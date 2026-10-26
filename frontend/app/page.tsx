@@ -6,7 +6,7 @@ import { api, type QueryVersion, type RunLog } from "@/lib/api";
 
 export default function QueriesPage() {
   const [versions, setVersions] = useState<QueryVersion[]>([]);
-  const [logs, setLogs] = useState<RunLog[] | null>(null);
+  const [logs, setLogs] = useState<{ version: number; title: string; items: RunLog[] } | null>(null);
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -100,10 +100,27 @@ export default function QueriesPage() {
                     <button
                       className="btn"
                       disabled={busy !== null}
-                      onClick={() => run(`fetch-${v.id}`, async () => setLogs(await api.runPipeline(v.id)))}
+                      onClick={() =>
+                        run(`fetch-${v.id}`, async () =>
+                          setLogs({ version: v.version_number, title: "Last run", items: await api.runPipeline(v.id) }),
+                        )
+                      }
                     >
                       {busy === `fetch-${v.id}` ? "Running…" : v.status === "fetched" ? "Re-run" : "Fetch & screen"}
                     </button>
+                    {v.status === "fetched" && (
+                      <button
+                        className="text-blue-600 hover:underline"
+                        onClick={() =>
+                          api
+                            .runs(v.id)
+                            .then((items) => setLogs({ version: v.version_number, title: "Run history", items }))
+                            .catch((e) => setError(e.message))
+                        }
+                      >
+                        Log
+                      </button>
+                    )}
                     {v.status === "fetched" && (
                       <Link className="text-blue-600 hover:underline" href={`/records?version=${v.id}`}>
                         Records
@@ -119,10 +136,13 @@ export default function QueriesPage() {
 
       {logs && (
         <section>
-          <h2 className="mb-2 text-lg font-semibold">Last run</h2>
+          <h2 className="mb-2 text-lg font-semibold">
+            {logs.title} (v{logs.version})
+          </h2>
           <ul className="flex flex-col gap-1 text-sm">
-            {logs.map((l) => (
-              <li key={l.step} className={l.status === "error" ? "text-red-600" : ""}>
+            {logs.items.map((l, i) => (
+              <li key={i} className={l.status === "error" ? "text-red-600" : ""}>
+                <span className="text-xs text-neutral-500">{new Date(l.started_at).toLocaleString()}</span>{" "}
                 <span className="font-medium">{l.step}</span> — {l.status}{" "}
                 <code className="text-xs text-neutral-500">{JSON.stringify(l.details)}</code>
               </li>
