@@ -5,7 +5,7 @@ A small Rayyan-style tool for systematic reviews. It searches PubMed, fetches re
 - **Frontend**: Next.js (App Router, TypeScript, Tailwind) in [`frontend/`](frontend/), deployed on Vercel
 - **Backend**: FastAPI, SQLAlchemy 2, Alembic, Postgres in [`backend/`](backend/), deployed on Render
 
-Demo login (created on every start): `demo@minirayyan.dev` / `demo1234`
+Demo login (created on every start): `demo@minirayyan.dev` / `demo1234` locally. The live site uses the password in `SEED_PASSWORD` on Render; ask the team for it.
 
 ## Run it locally
 

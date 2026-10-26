@@ -20,6 +20,7 @@ def _clause(stop_words: str = "", stop_chars: str = ".;\n") -> str:
 
 
 # Trigger words are matched but left out of the span: only the named groups (P/I/C/O) are tagged.
+_END = ".;,\n"  # I and C also end at a comma; a constant because 3.11 f-strings can't hold a backslash
 _ART = r"(?:(?:the|a|an)\s+)?"
 _VS = r"or|versus|vs|compared|against"
 _TIME = (
@@ -47,12 +48,12 @@ PATTERNS = [
         r"\b(?:(?:randomi[sz]ed|assigned|allocated)\b[^.;\n]{0,80}?\bto(?:\s+receive)?"
         r"|received|receiving|treated with|administered|given)\s+(?:either\s+)?"
         rf"(?!(?:{_TRIAL_AIM})\b){_ART}"
-        rf"(?P<I>\w{_clause(_I_STOP, '.;,\n')})"
-        rf"(?:,?\s*(?:or|versus|vs\.?|compared (?:with|to))\s+{_ART}(?P<C>\w{_clause(_TIME, '.;,\n')}))?",
+        rf"(?P<I>\w{_clause(_I_STOP, _END)})"
+        rf"(?:,?\s*(?:or|versus|vs\.?|compared (?:with|to))\s+{_ART}(?P<C>\w{_clause(_TIME, _END)}))?",
         re.I,
     ),
     re.compile(
-        rf"\b(?:compared (?:with|to)|versus|vs\.?|against)\s+{_ART}(?P<C>\w{_clause(_TIME, '.;,\n')})", re.I
+        rf"\b(?:compared (?:with|to)|versus|vs\.?|against)\s+{_ART}(?P<C>\w{_clause(_TIME, _END)})", re.I
     ),
     re.compile(rf"\b(?P<C>{_CMP})\b", re.I),
     # Outcome: "the primary outcome was change in HbA1c", "outcomes included exacerbation rate"
