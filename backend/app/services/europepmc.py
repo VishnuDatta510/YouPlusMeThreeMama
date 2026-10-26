@@ -28,8 +28,54 @@ def _call(params: dict, retries: int = 4) -> dict:
     raise AssertionError("unreachable")
 
 
+# PubMed field tag → Europe PMC field. A tag not listed here is dropped and its words searched everywhere.
+FIELDS = {
+    "pt": "PUB_TYPE",
+    "ti": "TITLE",
+    "ab": "ABSTRACT",
+    "tiab": "TITLE_ABS",
+    "tw": "TITLE_ABS",
+    "mh": "MESH",
+    "mesh": "MESH",
+    "majr": "MESH",
+    "au": "AUTH",
+    "la": "LANG",
+    "ot": "KW",
+    "publication type": "PUB_TYPE",
+    "title": "TITLE",
+    "abstract": "ABSTRACT",
+    "title/abstract": "TITLE_ABS",
+    "text word": "TITLE_ABS",
+    "mesh terms": "MESH",
+    "mesh major topic": "MESH",
+    "author": "AUTH",
+    "language": "LANG",
+    "other term": "KW",
+}
+# The words a tag applies to: a quoted phrase, or everything back to the last bracket, quote or boolean operator.
+_TAGGED = re.compile(r'("[^"]*"|[^()"\[\]]+?)\s*\[([A-Za-z /]+?)(?::noexp)?\]')
+_OPERATOR = re.compile(r"(\s(?:AND|OR|NOT)\s)")
+
+
+def _field(m: re.Match) -> str:
+    *head, words = _OPERATOR.split(m.group(1))
+    lead = words[: len(words) - len(words.lstrip())]
+    words = words.strip().strip('"')
+    field = FIELDS.get(m.group(2).strip().lower())
+    return "".join(head) + lead + (f'{field}:"{words}"' if field else f'"{words}"')
+
+
+def translate(term: str) -> str:
+    """PubMed field tags ("trial[pt]") → Europe PMC fields (PUB_TYPE:"trial").
+
+    Left as is, Europe PMC reads the "[" as the start of a range and the rest of the query, dates included, is lost.
+    """
+    return _TAGGED.sub(_field, term)
+
+
 def build_query(term: str, date_from: date | None, date_to: date | None) -> str:
     """Europe PMC takes the same AND / OR / NOT and "quoted phrase" syntax as PubMed; dates go in the query."""
+    term = translate(term)
     if not (date_from or date_to):
         return term
     lo = (date_from or date(1800, 1, 1)).isoformat()
