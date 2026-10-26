@@ -74,7 +74,7 @@ export default function RecordPage({ params }: PageProps<"/records/[id]">) {
         <aside className="flex flex-col gap-6">
           <ScreenForm record={record} busy={busy} onSave={decide} />
           <Duplicates record={record} busy={busy} onSave={decide} />
-          <History record={record} />
+          <History record={record} busy={busy} onSave={decide} />
         </aside>
       </div>
     </div>
@@ -355,7 +355,9 @@ function describe(h: RecordDetail["history"][number]) {
   return `PICO edited (${(v.spans as Span[]).length} spans)`;
 }
 
-function History({ record }: { record: RecordDetail }) {
+function History({ record, busy, onSave }: SaveProps & { record: RecordDetail }) {
+  // History is newest first, so the first entry of each type is the one in effect; older ones can be restored.
+  const current = new Set(record.history.map((h) => record.history.find((x) => x.decision_type === h.decision_type)!.id));
   return (
     <section className="flex flex-col gap-2 text-sm">
       <h2 className="font-semibold">History</h2>
@@ -367,8 +369,20 @@ function History({ record }: { record: RecordDetail }) {
             <li key={h.id} className="border-l-2 border-neutral-300 pl-2 dark:border-neutral-700">
               <div>{describe(h)}</div>
               {h.note && <div className="italic text-neutral-600 dark:text-neutral-400">“{h.note}”</div>}
-              <div className="text-xs text-neutral-500">
+              <div className="flex items-center gap-2 text-xs text-neutral-500">
                 {h.reviewer} · {new Date(h.created_at).toLocaleString()}
+                {!current.has(h.id) && (
+                  <button
+                    className="text-blue-600 hover:underline disabled:opacity-50"
+                    disabled={busy}
+                    title="Append a new decision with this value; nothing is deleted"
+                    onClick={() =>
+                      onSave({ decision_type: h.decision_type, value: h.value, note: `Restored decision #${h.id}` } as Decision)
+                    }
+                  >
+                    Restore
+                  </button>
+                )}
               </div>
             </li>
           ))}

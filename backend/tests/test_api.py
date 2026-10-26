@@ -273,3 +273,20 @@ def test_diff_against_parent_version(client, auth):
     assert d["against"] == v1["id"] and d["added"] == [] and d["unchanged"] == len(pmids) - 3
     assert sorted(r["pmid"] for r in d["removed"]) == sorted(pmids[:3])
     assert client.get(f"/queries/{v1['id']}/diff", headers=auth).status_code == 404
+
+
+def test_restore_appends_an_earlier_value(client, auth, loaded):
+    rid = next(r["id"] for r in client.get("/records?status=include", headers=auth).json())
+    url = f"/records/{rid}/decisions"
+    first = client.post(
+        url,
+        json={"decision_type": "pico", "value": {"spans": [{"type": "P", "start": 0, "end": 10}]}},
+        headers=auth,
+    ).json()
+    client.post(url, json={"decision_type": "pico", "value": {"spans": []}}, headers=auth)
+    old = first["history"][0]  # its spans carry the server-derived `text`, as the UI sends them back
+    r = client.post(
+        url, json={"decision_type": "pico", "value": old["value"], "note": "Restored"}, headers=auth
+    )
+    assert r.status_code == 200
+    assert r.json()["pico"] == first["pico"] and len(r.json()["history"]) == 3
