@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from app.auth import current_reviewer
 from app.db import get_db
 from app.models import QueryVersion, Reviewer
-from app.schemas import QueryIn, QueryVersionOut
-from app.services import pubmed
+from app.schemas import QueryIn, QueryVersionOut, RunLogOut
+from app.services import pipeline, pubmed
 
 router = APIRouter(prefix="/queries", tags=["queries"], dependencies=[Depends(current_reviewer)])
 
@@ -40,3 +40,11 @@ def preview(body: QueryIn, db: Session = Depends(get_db), reviewer: Reviewer = D
 @router.get("", response_model=list[QueryVersionOut])
 def list_versions(db: Session = Depends(get_db)):
     return db.scalars(select(QueryVersion).order_by(QueryVersion.version_number.desc())).all()
+
+
+@router.post("/{version_id}/fetch", response_model=list[RunLogOut])
+def fetch(version_id: int, db: Session = Depends(get_db)):
+    qv = db.get(QueryVersion, version_id)
+    if qv is None:
+        raise HTTPException(404, "Query version not found")
+    return pipeline.run(db, qv)

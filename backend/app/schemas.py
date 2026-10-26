@@ -48,3 +48,12 @@ class QueryVersionOut(BaseModel):
     hit_count: int
     status: str
     created_at: datetime
+
+
+class RunLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    step: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    details: dict

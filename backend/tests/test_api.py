@@ -1,10 +1,14 @@
+from pathlib import Path
+
 import httpx
 import pytest
 import respx
+from sqlalchemy import func, select
 
 from app.config import settings
+from app.models import Record, RecordQueryLink
 from app.seed import seed
-from app.services.pubmed import EUTILS
+from app.services.pubmed import EUTILS, parse_efetch
 
 
 @pytest.fixture
@@ -53,3 +57,36 @@ def test_preview_creates_versions(client, auth):
 def test_preview_rejects_bad_dates(client, auth):
     body = {"query_string": "x", "date_from": "2021-01-01", "date_to": "2020-01-01"}
     assert client.post("/queries/preview", json=body, headers=auth).status_code == 422
+
+
+FIXTURE = Path(__file__).parent / "fixtures" / "efetch_sample.xml"
+
+
+def mock_pubmed(pmids):
+    def esearch(request):
+        params = dict(httpx.QueryParams(request.content.decode()))
+        if params.get("rettype") == "count":
+            return httpx.Response(200, json={"esearchresult": {"count": str(len(pmids))}})
+        return httpx.Response(200, json={"esearchresult": {"idlist": pmids}})
+
+    respx.post(f"{EUTILS}/esearch.fcgi").mock(side_effect=esearch)
+    return respx.post(f"{EUTILS}/efetch.fcgi").mock(
+        return_value=httpx.Response(200, content=FIXTURE.read_bytes())
+    )
+
+
+@respx.mock
+def test_fetch_is_incremental(client, auth, db):
+    pmids = [r["pmid"] for r in parse_efetch(FIXTURE.read_bytes())]
+    efetch = mock_pubmed(pmids)
+    v1 = client.post("/queries/preview", json={"query_string": "metformin"}, headers=auth).json()
+    logs = client.post(f"/queries/{v1['id']}/fetch", headers=auth).json()
+    assert logs[0]["step"] == "fetch" and logs[0]["status"] == "ok"
+    assert logs[0]["details"]["new"] == 16
+    assert db.scalar(select(func.count()).select_from(Record)) == 16
+
+    v2 = client.post("/queries/preview", json={"query_string": "metformin again"}, headers=auth).json()
+    logs = client.post(f"/queries/{v2['id']}/fetch", headers=auth).json()
+    assert logs[0]["details"] == {"found": 16, "new": 0, "already_known": 16}
+    assert efetch.call_count == 1
+    assert db.scalar(select(func.count()).select_from(RecordQueryLink)) == 32

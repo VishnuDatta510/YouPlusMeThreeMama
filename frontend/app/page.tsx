@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type QueryVersion } from "@/lib/api";
+import { api, type QueryVersion, type RunLog } from "@/lib/api";
 
 export default function QueriesPage() {
   const [versions, setVersions] = useState<QueryVersion[]>([]);
+  const [logs, setLogs] = useState<RunLog[] | null>(null);
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -95,7 +96,14 @@ export default function QueriesPage() {
                   </td>
                   <td className="text-right">{v.hit_count.toLocaleString()}</td>
                   <td>{v.status}</td>
-                  <td className="whitespace-nowrap text-right">
+                  <td className="flex justify-end gap-3 whitespace-nowrap py-2">
+                    <button
+                      className="btn"
+                      disabled={busy !== null}
+                      onClick={() => run(`fetch-${v.id}`, async () => setLogs(await api.runPipeline(v.id)))}
+                    >
+                      {busy === `fetch-${v.id}` ? "Running…" : v.status === "fetched" ? "Re-run" : "Fetch & screen"}
+                    </button>
                     {v.status === "fetched" && (
                       <Link className="text-blue-600 hover:underline" href={`/records?version=${v.id}`}>
                         Records
@@ -108,6 +116,20 @@ export default function QueriesPage() {
           </table>
         )}
       </section>
+
+      {logs && (
+        <section>
+          <h2 className="mb-2 text-lg font-semibold">Last run</h2>
+          <ul className="flex flex-col gap-1 text-sm">
+            {logs.map((l) => (
+              <li key={l.step} className={l.status === "error" ? "text-red-600" : ""}>
+                <span className="font-medium">{l.step}</span> — {l.status}{" "}
+                <code className="text-xs text-neutral-500">{JSON.stringify(l.details)}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

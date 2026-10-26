@@ -57,7 +57,15 @@ export type QueryVersion = {
   created_at: string;
 };
 
-export type QueryIn = { query_string: string; date_from?: string | null; date_to?: string | null };
+export type RunLog = {
+  step: string;
+  status: "running" | "ok" | "error";
+  started_at: string;
+  finished_at: string | null;
+  details: Record<string, unknown>;
+};
+
+export type QueryIn ={ query_string: string; date_from?: string | null; date_to?: string | null };
 
 export const api = {
   login: (email: string, password: string) =>
@@ -65,4 +73,5 @@ export const api = {
   me: () => json<Reviewer>("/auth/me"),
   preview: (q: QueryIn) => post<QueryVersion>("/queries/preview", q),
   versions: () => json<QueryVersion[]>("/queries"),
+  runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
 };
