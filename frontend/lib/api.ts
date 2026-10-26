@@ -29,8 +29,12 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? res.statusText);
-    throw new ApiError(res.status, detail);
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((d: { msg?: string }) => d.msg ?? "").join("; ")
+      : typeof body.detail === "string"
+        ? body.detail
+        : res.statusText;
+    throw new ApiError(res.status, detail || `Request failed (${res.status})`);
   }
   return res;
 }
@@ -39,10 +43,13 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await request(path, init)).json();
 }
 
-const post = <T>(path: string, body?: unknown) =>
-  json<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+const send = <T>(method: string, path: string, body?: unknown) =>
+  json<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+const post = <T>(path: string, body?: unknown) => send<T>("POST", path, body);
 
 export type Reviewer = { id: number; email: string; name: string };
+export type Source = "pubmed" | "europepmc";
+export const SOURCE_NAMES: Record<string, string> = { pubmed: "PubMed", europepmc: "Europe PMC", import: "File import" };
 
 export type QueryVersion = {
   id: number;
@@ -53,11 +60,15 @@ export type QueryVersion = {
   date_to: string | null;
   sources: string[];
   hit_count: number;
+  source_hits: Record<string, number>;
   status: "previewed" | "fetched";
+  active: boolean;
   created_at: string;
 };
 
 export type RunLog = {
+  id: number;
+  query_version_id: number;
   step: string;
   status: "running" | "ok" | "error";
   started_at: string;
@@ -65,10 +76,35 @@ export type RunLog = {
   details: Record<string, unknown>;
 };
 
-type RecordBrief = { id: number; pmid: string | null; title: string; year: number | null };
-export type VersionDiff = { against: number; added: RecordBrief[]; removed: RecordBrief[]; unchanged: number };
+export type Status = Label | "unscreened";
+export type RecordBrief = {
+  id: number;
+  pmid: string | null;
+  title: string;
+  year: number | null;
+  first_author: string;
+  status: Status;
+  reason: string;
+};
+export type VersionDiff = {
+  against: number;
+  added: RecordBrief[];
+  removed: RecordBrief[];
+  unchanged: number;
+  merged: { records: RecordBrief[]; conflict: boolean }[];
+};
+export type Revert = { logs: RunLog[]; records: number; groups: number; identical_to_original: boolean };
+export type Criterion = { key: string; label: string; why: string; basis: string; active: boolean };
 
-export type QueryIn = { query_string: string; date_from?: string | null; date_to?: string | null };
+export type QueryIn = {
+  query_string: string;
+  date_from?: string | null;
+  date_to?: string | null;
+  sources: Source[];
+  parent_version_id?: number | null;
+};
+
+export type RecordFilters = { status?: string; query_version_id?: string; needs_review?: string; conflict?: string };
 
 export const api = {
   login: (email: string, password: string) =>
@@ -77,9 +113,15 @@ export const api = {
   preview: (q: QueryIn) => post<QueryVersion>("/queries/preview", q),
   versions: () => json<QueryVersion[]>("/queries"),
   runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
+  setActive: (versionId: number, active: boolean) => send<RunLog[]>("PATCH", `/queries/${versionId}`, { active }),
+  revert: (versionId: number) => post<Revert>(`/queries/${versionId}/revert`),
   runs: (versionId: number) => json<RunLog[]>(`/queries/${versionId}/runs`),
-  diff: (versionId: number) => json<VersionDiff>(`/queries/${versionId}/diff`),
-  records: (filters: { status?: string; query_version_id?: string; needs_review?: string; conflict?: string }) => {
+  diff: (versionId: number, against?: number) =>
+    json<VersionDiff>(`/queries/${versionId}/diff${against ? `?against=${against}` : ""}`),
+  importSnapshot: (filename: string, content: string) => post<RunLog[]>("/queries/import", { filename, content }),
+  criteria: () => json<Criterion[]>("/screening/criteria"),
+  setCriteria: (active: string[], note: string) => send<RunLog[]>("PUT", "/screening/criteria", { active, note }),
+  records: (filters: RecordFilters) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
     return json<RecordRow[]>(`/records?${qs}`);
   },
@@ -102,9 +144,13 @@ export type Span = { type: PicoType; start: number; end: number; text: string };
 export type RecordRow = {
   id: number;
   pmid: string | null;
+  doi: string | null;
   title: string;
+  first_author: string;
+  journal: string;
   year: number | null;
-  status: Label | "unscreened";
+  origin: string;
+  status: Status;
   reason: string;
   source: "machine" | "human" | "";
   duplicates: number;
@@ -117,6 +163,19 @@ export type Decision =
   | { decision_type: "duplicate"; value: { duplicate_of: number | null }; note?: string }
   | { decision_type: "pico"; value: { spans: Omit<Span, "text">[] }; note?: string };
 
+type ScreenState = { label: Label; reason: string; source: "machine" | "human" };
+
+export type GroupMember = {
+  id: number;
+  pmid: string | null;
+  title: string;
+  year: number | null;
+  journal: string;
+  origin: string;
+  status: ScreenState | null;
+  votes: { reviewer: string; label: Label }[];
+};
+
 export type RecordDetail = {
   id: number;
   pmid: string | null;
@@ -126,14 +185,20 @@ export type RecordDetail = {
   authors: string[];
   year: number | null;
   journal: string;
+  pages: string;
   language: string;
   publication_types: string[];
   mesh_terms: string[];
-  status: { label: Label; reason: string; source: "machine" | "human" } | null;
+  origin: string;
+  source_id: string | null;
+  status: ScreenState | null;
+  conflict: boolean;
   pico: Span[];
   duplicate_of: number | null;
   match: { match_method: string; score: number; needs_review: boolean } | null;
-  duplicates: { id: number; pmid: string | null; title: string; year: number | null }[];
+  duplicates: GroupMember[];
+  group: GroupMember[];
+  versions: { id: number; version_number: number; active: boolean }[];
   history: {
     id: number;
     decision_type: Decision["decision_type"];

@@ -1,37 +1,160 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --paper: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #182132;
+  --muted: #5c6779;
+  --faint: #8a94a4;
+  --rule: #dde2e8;
+  --accent: #3446b5;
+  --accent-ink: #ffffff;
+  --accent-soft: #e9ecfa;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --inc: #1c7449;
+  --inc-bg: #e2f1e8;
+  --exc: #ac3539;
+  --exc-bg: #f8e4e4;
+  --may: #94600c;
+  --may-bg: #f6edd8;
+  --uns: #5c6779;
+  --uns-bg: #eaedf1;
+
+  --pico-p: #cfe5f6;
+  --pico-p-line: #2f7db5;
+  --pico-i: #dcefc8;
+  --pico-i-line: #4e861f;
+  --pico-c: #f6e1bd;
+  --pico-c-line: #b0741a;
+  --pico-o: #ecd9f3;
+  --pico-o-line: #8a3ea5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #10141c;
+    --surface: #161b25;
+    --ink: #e5e8ee;
+    --muted: #9aa3b2;
+    --faint: #6b7485;
+    --rule: #273041;
+    --accent: #8f9cff;
+    --accent-ink: #10141c;
+    --accent-soft: #1f2546;
+
+    --inc: #63c592;
+    --inc-bg: #12301f;
+    --exc: #f08a8d;
+    --exc-bg: #3a1a1c;
+    --may: #e2b25a;
+    --may-bg: #33270f;
+    --uns: #9aa3b2;
+    --uns-bg: #1f2531;
+
+    --pico-p: #173a55;
+    --pico-p-line: #6db6ea;
+    --pico-i: #22391a;
+    --pico-i-line: #94cf5e;
+    --pico-c: #43311a;
+    --pico-c-line: #e6ac57;
+    --pico-o: #3a2244;
+    --pico-o-line: #cf8ae6;
   }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-inc: var(--inc);
+  --color-inc-bg: var(--inc-bg);
+  --color-exc: var(--exc);
+  --color-exc-bg: var(--exc-bg);
+  --color-may: var(--may);
+  --color-may-bg: var(--may-bg);
+  --color-uns: var(--uns);
+  --color-uns-bg: var(--uns-bg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-source-serif);
+}
+
+html {
+  color-scheme: light dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer components {
+  .panel {
+    @apply rounded-xl border border-rule bg-surface;
+  }
   .input {
-    @apply rounded border border-neutral-300 bg-transparent px-2 py-1.5 dark:border-neutral-700;
+    @apply rounded-lg border border-rule bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint transition-colors hover:border-faint focus:border-accent focus:outline-none;
   }
   .btn {
-    @apply rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-rule bg-surface px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-faint disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-primary {
-    @apply rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-50;
   }
+  .btn-quiet {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-muted transition-colors hover:bg-uns-bg hover:text-ink disabled:pointer-events-none disabled:opacity-50;
+  }
+  .link {
+    @apply text-accent underline-offset-2 hover:underline;
+  }
+  .label {
+    @apply text-[13px] font-medium text-muted;
+  }
+  .kbd {
+    @apply rounded border border-rule bg-paper px-1 font-mono text-[11px] text-muted;
+  }
+}
+
+/* PICO highlights: a tint with a coloured underline, so tags stay readable inside running text. */
+.pico-P { background: var(--pico-p); box-shadow: inset 0 -2px var(--pico-p-line); }
+.pico-I { background: var(--pico-i); box-shadow: inset 0 -2px var(--pico-i-line); }
+.pico-C { background: var(--pico-c); box-shadow: inset 0 -2px var(--pico-c-line); }
+.pico-O { background: var(--pico-o); box-shadow: inset 0 -2px var(--pico-o-line); }
+.pico-dot-P { background: var(--pico-p-line); }
+.pico-dot-I { background: var(--pico-i-line); }
+.pico-dot-C { background: var(--pico-c-line); }
+.pico-dot-O { background: var(--pico-o-line); }
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.rise {
+  animation: rise 180ms ease-out;
 }
