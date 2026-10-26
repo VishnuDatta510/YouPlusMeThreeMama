@@ -1,6 +1,6 @@
 # Mini-Rayyan
 
-A small Rayyan-style tool for systematic reviews. It searches PubMed, fetches records, removes duplicates, screens each record as Include, Exclude or Maybe with transparent rules, and tags PICO spans in abstracts. Reviewers can override any machine decision, and every override is logged.
+A small Rayyan-style tool for systematic reviews. It searches PubMed and Europe PMC, fetches records, removes duplicates, screens each record as Include, Exclude or Maybe with transparent rules, and tags PICO spans in abstracts. Reviewers can override any machine decision, and every override is logged.
 
 - **Frontend**: Next.js (App Router, TypeScript, Tailwind) in [`frontend/`](frontend/), deployed on Vercel
 - **Backend**: FastAPI, SQLAlchemy 2, Alembic, Postgres in [`backend/`](backend/), deployed on Render
@@ -85,21 +85,23 @@ flowchart LR
     DB[(Postgres)]
   end
   NCBI[(PubMed E-utilities)]
+  EPMC[(Europe PMC REST)]
   UI -- JWT / JSON --> API
   API -- esearch / efetch --> NCBI
+  API -- search --> EPMC
   API --> DB
 ```
 
-1. **Preview**: `POST /queries/preview` runs an ESearch count and saves the query as a new **query version**. Each version points to its parent and is never edited.
+1. **Preview**: `POST /queries/preview` counts hits in PubMed and Europe PMC and saves the query as a new **query version**. Each version points to its parent and is never edited.
 2. **Fetch and screen**: `POST /queries/{id}/fetch` runs the pipeline. Each step writes a `run_log` row (see `GET /queries/{id}/runs`).
-   1. **fetch**: ESearch up to `MAX_FETCH` IDs, then EFetch only PMIDs that are not stored yet. This step is incremental and links every hit to the version.
+   1. **fetch**: search each source for up to `MAX_FETCH` IDs, then fetch only records that are not stored yet (PubMed EFetch at 3 requests/s, 10 with a key; Europe PMC pages of results with the query translated to its syntax). This step is incremental, stores the source with each record, and links every hit to the version.
    2. **dedupe**: exact DOI or PMID match first, then a fuzzy title match (rapidfuzz `token_sort_ratio`) within the same year and first-author block.
       - A score of 95 or more groups the records automatically; 85–95 groups them with a *needs review* flag. The records table marks those representatives with a **review** badge and can filter to them, until a reviewer confirms or rejects the match.
       - The lowest record id is the representative, so results are deterministic.
-   3. **screen**: transparent rules (non-English, non-human, case report, simulation). Each result is stored with its `method_version`, so re-runs only screen what is new or what the rules changed.
-   4. **pico**: rule-based P/I/C/O spans for included and maybe records with an abstract.
+   3. **screen**: eight switchable rules (non-English, non-human, case report, simulation or modelling, review or meta-analysis, editorial or letter, retracted, protocol). Each uses the record's metadata (language, publication type, MeSH) when present and a documented text rule otherwise; every exclusion lists its reasons, and records with no abstract or no clear human population become Maybe. Each result is stored with its `method_version`, so re-runs only screen what is new or what the rules changed.
+   4. **pico**: rule-based P/I/C/O spans for included and maybe records with an abstract. Comparators have their own rules (the arm after or/versus/compared with, plus placebo, sham, usual care and similar), and results sections are skipped so arms quoted next to statistics aren't tagged.
 3. **Review**: the records table shows group representatives only. The detail page shows highlighted PICO spans and lets reviewers change status, mark or unmark duplicates (one at a time, or a whole group from its representative), and edit or remove spans. Every action appends a `human_decisions` row and appears in the History panel, where **Restore** re-applies an earlier decision by appending it again. When reviewers' latest screening labels disagree, the record gets a **conflict** badge (and a filter); the newest decision stays in effect until someone resolves it.
-4. **Compare versions**: `GET /queries/{id}/diff` (the **Diff** link on the Queries page) lists the records a version gained and lost compared with its parent version.
+4. **Compare versions**: `GET /queries/{id}/diff` (the **Diff** link on the Queries page) lists the records a version gained and lost compared with its parent version, and the duplicate groups that newly merged. **Revert to this** makes an earlier version the working set again, with the same records and groups.
 5. **Export**: `GET /export/included.csv` returns the included studies with PMID, DOI, title, authors, year, journal and PICO text.
 
 **Effective state** is the latest human decision if there is one, otherwise the latest machine result. Nothing is overwritten or deleted, so reverting is just appending an earlier value again.

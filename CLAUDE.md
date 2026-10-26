@@ -25,8 +25,8 @@ Full spec: `mini-rayyan-claude-code-prompt.md`. User-facing docs: `README.md`.
 
 ## Sources
 - PubMed E-utilities: at most 3 requests/s, 10 with `NCBI_API_KEY`. Send `NCBI_TOOL` and `NCBI_EMAIL`. Keep the NCBI disclaimer in the footer.
-- Europe PMC is not built yet; it is the next source to add.
-- PICO is rule-based (`pico.py`, rules-v2). `PICO_METHOD` is the hook for an LLM tagger, which is also not built yet.
+- Europe PMC (`europepmc.py`) is the second source; no key needed, with retries and backoff.
+- PICO is rule-based (`pico.py`, rules-v5). `PICO_METHOD` is the hook for an LLM tagger, which is also not built yet.
 
 ## Deliverables
 A README a stranger can rerun, a report of at most 3 pages, a one-page loop design, and a 5-minute demo.
