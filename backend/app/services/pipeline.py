@@ -156,10 +156,18 @@ def dedupe(db: Session, qv: QueryVersion, entry: RunLog) -> dict:
 
 
 def _records_without_result(db: Session, qv: QueryVersion, step: str, method: str):
-    """Records linked to this version that have no machine result for (step, method) yet."""
-    done = select(MachineResult.record_id).where(
-        MachineResult.step == step, MachineResult.method_version == method
+    """Records linked to this version whose latest machine result for step is not from method.
+
+    Latest, not any: switching criteria off and on again must rerun, or the off-state result stays effective.
+    """
+    latest = (
+        select(MachineResult.record_id, MachineResult.method_version)
+        .where(MachineResult.step == step)
+        .order_by(MachineResult.record_id, MachineResult.id.desc())
+        .distinct(MachineResult.record_id)
+        .subquery()
     )
+    done = select(latest.c.record_id).where(latest.c.method_version == method)
     return db.scalars(
         select(Record)
         .join(RecordQueryLink, RecordQueryLink.record_id == Record.id)

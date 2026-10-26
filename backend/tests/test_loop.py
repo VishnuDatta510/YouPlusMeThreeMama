@@ -168,6 +168,12 @@ def test_criteria_can_be_switched_off_and_rescreen(client, auth, loaded):
     assert active == ["case_report"]
     assert client.put("/screening/criteria", json={"active": ["nope"]}, headers=auth).status_code == 422
 
+    # Switching back reruns too, so the earlier criteria's results become effective again.
+    every = {"active": [c["key"] for c in criteria]}
+    assert client.put("/screening/criteria", json=every, headers=auth).json()[0]["details"]["screened"] == 16
+    rows = {r["id"]: r for r in client.get("/records", headers=auth).json()}
+    assert all(rows[i]["status"] == "exclude" for i in french)
+
 
 def test_decisions_follow_the_group_and_merges_show_conflicts(client, auth, loaded, db):
     from app.auth import create_token, hash_password
