@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type QueryVersion, type RunLog } from "@/lib/api";
+import { api, type QueryVersion, type RunLog, type VersionDiff } from "@/lib/api";
 
 export default function QueriesPage() {
   const [versions, setVersions] = useState<QueryVersion[]>([]);
   const [logs, setLogs] = useState<{ version: number; title: string; items: RunLog[] } | null>(null);
+  const [diff, setDiff] = useState<{ version: number; data: VersionDiff } | null>(null);
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -78,24 +79,24 @@ export default function QueriesPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-neutral-300 dark:border-neutral-700">
               <tr>
-                <th className="py-2">v</th>
-                <th>Query</th>
-                <th>Dates</th>
-                <th className="text-right">Hits</th>
-                <th>Status</th>
+                <th className="py-2 pr-3">v</th>
+                <th className="pr-3">Query</th>
+                <th className="pr-3">Dates</th>
+                <th className="pr-3 text-right">Hits</th>
+                <th className="pr-3">Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {versions.map((v) => (
                 <tr key={v.id} className="border-b border-neutral-200 dark:border-neutral-800">
-                  <td className="py-2">{v.version_number}</td>
-                  <td className="font-mono">{v.query_string}</td>
-                  <td className="whitespace-nowrap">
+                  <td className="py-2 pr-3">{v.version_number}</td>
+                  <td className="pr-3 font-mono">{v.query_string}</td>
+                  <td className="whitespace-nowrap pr-3">
                     {v.date_from ?? "…"} – {v.date_to ?? "…"}
                   </td>
-                  <td className="text-right">{v.hit_count.toLocaleString()}</td>
-                  <td>{v.status}</td>
+                  <td className="pr-3 text-right">{v.hit_count.toLocaleString()}</td>
+                  <td className="pr-3">{v.status}</td>
                   <td className="flex justify-end gap-3 whitespace-nowrap py-2">
                     <button
                       className="btn"
@@ -121,6 +122,20 @@ export default function QueriesPage() {
                         Log
                       </button>
                     )}
+                    {v.status === "fetched" && v.parent_version_id !== null && (
+                      <button
+                        className="text-blue-600 hover:underline"
+                        title="Records gained and lost compared with the previous version"
+                        onClick={() =>
+                          api
+                            .diff(v.id)
+                            .then((data) => setDiff({ version: v.version_number, data }))
+                            .catch((e) => setError(e.message))
+                        }
+                      >
+                        Diff
+                      </button>
+                    )}
                     {v.status === "fetched" && (
                       <Link className="text-blue-600 hover:underline" href={`/records?version=${v.id}`}>
                         Records
@@ -133,6 +148,38 @@ export default function QueriesPage() {
           </table>
         )}
       </section>
+
+      {diff && (
+        <section className="text-sm">
+          <h2 className="mb-2 text-lg font-semibold">
+            v{diff.version} vs v{versions.find((v) => v.id === diff.data.against)?.version_number ?? "?"}
+          </h2>
+          <p className="mb-2 text-neutral-500">
+            {diff.data.added.length} added, {diff.data.removed.length} removed, {diff.data.unchanged} unchanged
+          </p>
+          {(["added", "removed"] as const).map((kind) =>
+            diff.data[kind].length ? (
+              <div key={kind} className="mb-3">
+                <h3 className={`font-medium ${kind === "added" ? "text-green-700" : "text-red-700"}`}>
+                  {kind === "added" ? "+ Added" : "− Removed"}
+                </h3>
+                <ul className="ml-4 list-disc">
+                  {diff.data[kind].map((r) => (
+                    <li key={r.id}>
+                      <Link className="hover:underline" href={`/records/${r.id}`}>
+                        {r.title || "(untitled)"}
+                      </Link>{" "}
+                      <span className="text-xs text-neutral-500">
+                        {r.year} PMID {r.pmid}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </section>
+      )}
 
       {logs && (
         <section>

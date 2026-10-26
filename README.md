@@ -97,9 +97,10 @@ flowchart LR
    3. **screen**: transparent rules (non-English, non-human, case report, simulation). Each result is stored with its `method_version`, so re-runs only screen what is new or what the rules changed.
    4. **pico**: rule-based P/I/C/O spans for included and maybe records with an abstract.
 3. **Review**: the records table shows group representatives only. The detail page shows highlighted PICO spans and lets reviewers change status, mark or unmark duplicates, and edit or remove spans. Every action appends a `human_decisions` row and appears in the History panel.
-4. **Export**: `GET /export/included.csv` returns the included studies with PMID, DOI, title, authors, year, journal and PICO text.
+4. **Compare versions**: `GET /queries/{id}/diff` (the **Diff** link on the Queries page) lists the records a version gained and lost compared with its parent version.
+5. **Export**: `GET /export/included.csv` returns the included studies with PMID, DOI, title, authors, year, journal and PICO text.
 
-**Effective state** is the latest human decision if there is one, otherwise the latest machine result. Nothing is overwritten or deleted, which is what a later query diff or revert (Level 2) builds on.
+**Effective state** is the latest human decision if there is one, otherwise the latest machine result. Nothing is overwritten or deleted, which is what revert (Level 2) would build on.
 
 ### Schema
 

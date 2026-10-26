@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import current_reviewer
 from app.db import get_db
-from app.models import QueryVersion, Reviewer, RunLog
+from app.models import QueryVersion, Record, RecordQueryLink, Reviewer, RunLog
 from app.schemas import QueryIn, QueryVersionOut, RunLogOut
 from app.services import pipeline, pubmed
 
@@ -55,3 +55,35 @@ def runs(version_id: int, db: Session = Depends(get_db)):
     return db.scalars(
         select(RunLog).where(RunLog.query_version_id == version_id).order_by(RunLog.id.desc()).limit(50)
     ).all()
+
+
+@router.get("/{version_id}/diff")
+def diff(version_id: int, against: int | None = None, db: Session = Depends(get_db)):
+    """Records this version returns that `against` (default: the parent version) did not, and vice versa."""
+    v = db.get(QueryVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "Query version not found")
+    other = against or v.parent_version_id
+    if other is None or db.get(QueryVersion, other) is None:
+        raise HTTPException(404, "No version to compare against")
+
+    def ids(vid: int) -> set[int]:
+        return set(
+            db.scalars(select(RecordQueryLink.record_id).where(RecordQueryLink.query_version_id == vid))
+        )
+
+    new, old = ids(version_id), ids(other)
+    records = {r.id: r for r in db.scalars(select(Record).where(Record.id.in_(new ^ old)))}
+
+    def brief(changed: set[int]) -> list[dict]:
+        return [
+            {"id": i, "pmid": records[i].pmid, "title": records[i].title, "year": records[i].year}
+            for i in sorted(changed)
+        ]
+
+    return {
+        "against": other,
+        "added": brief(new - old),
+        "removed": brief(old - new),
+        "unchanged": len(new & old),
+    }

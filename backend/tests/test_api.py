@@ -256,3 +256,20 @@ def test_cors_allows_origin_regex(client, monkeypatch):
     finally:
         monkeypatch.undo()
         importlib.reload(app.main)
+
+
+@respx.mock
+def test_diff_against_parent_version(client, auth):
+    pmids = [r["pmid"] for r in parse_efetch(FIXTURE.read_bytes())]
+    mock_pubmed(pmids)
+    v1 = client.post("/queries/preview", json={"query_string": "metformin"}, headers=auth).json()
+    client.post(f"/queries/{v1['id']}/fetch", headers=auth)
+    respx.reset()
+    mock_pubmed(pmids[3:])
+    v2 = client.post("/queries/preview", json={"query_string": "metformin NOT mice"}, headers=auth).json()
+    client.post(f"/queries/{v2['id']}/fetch", headers=auth)
+
+    d = client.get(f"/queries/{v2['id']}/diff", headers=auth).json()
+    assert d["against"] == v1["id"] and d["added"] == [] and d["unchanged"] == len(pmids) - 3
+    assert sorted(r["pmid"] for r in d["removed"]) == sorted(pmids[:3])
+    assert client.get(f"/queries/{v1['id']}/diff", headers=auth).status_code == 404

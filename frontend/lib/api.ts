@@ -65,6 +65,9 @@ export type RunLog = {
   details: Record<string, unknown>;
 };
 
+type RecordBrief = { id: number; pmid: string | null; title: string; year: number | null };
+export type VersionDiff = { against: number; added: RecordBrief[]; removed: RecordBrief[]; unchanged: number };
+
 export type QueryIn = { query_string: string; date_from?: string | null; date_to?: string | null };
 
 export const api = {
@@ -75,6 +78,7 @@ export const api = {
   versions: () => json<QueryVersion[]>("/queries"),
   runPipeline: (versionId: number) => post<RunLog[]>(`/queries/${versionId}/fetch`),
   runs: (versionId: number) => json<RunLog[]>(`/queries/${versionId}/runs`),
+  diff: (versionId: number) => json<VersionDiff>(`/queries/${versionId}/diff`),
   records: (filters: { status?: string; query_version_id?: string; needs_review?: string }) => {
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]);
     return json<RecordRow[]>(`/records?${qs}`);
