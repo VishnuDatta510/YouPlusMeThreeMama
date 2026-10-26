@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.pico import extract_pico
 
 
@@ -11,32 +13,74 @@ def test_rct_sentence():
         "compared with placebo. The primary outcome was change in HbA1c at 24 weeks."
     )
     spans = extract_pico(text)
-    assert {s["type"] for s in spans} == {"P", "I", "C", "O"}
     assert all(text[s["start"] : s["end"]] == s["text"] for s in spans)
-    assert ("P", "adults with type 2 diabetes") in tags(text)
-    assert ("I", "randomized to metformin") in tags(text)
-    assert ("C", "compared with placebo") in tags(text)
-
-
-def test_versus_and_outcome():
-    text = "Children aged 5-12 received drug A versus drug B; outcomes were measured at 6 months."
     assert tags(text) == {
-        ("P", "Children aged 5-12"),
-        ("I", "received drug A"),
-        ("C", "versus drug B"),
-        ("O", "outcomes were measured at 6 months"),
+        ("P", "adults with type 2 diabetes"),
+        ("I", "metformin"),
+        ("C", "placebo"),
+        ("O", "change in HbA1c"),
     }
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "Adults with type 2 diabetes received metformin or placebo for 12 weeks; "
+            "the primary outcome was change in HbA1c.",
+            {
+                ("P", "Adults with type 2 diabetes"),
+                ("I", "metformin"),
+                ("C", "placebo"),
+                ("O", "change in HbA1c"),
+            },
+        ),
+        (
+            "We randomized 120 patients with hypertension to amlodipine versus lisinopril. "
+            "The primary endpoint was systolic blood pressure at 6 months.",
+            {
+                ("P", "patients with hypertension"),
+                ("I", "amlodipine"),
+                ("C", "lisinopril"),
+                ("O", "systolic blood pressure"),
+            },
+        ),
+        (
+            "Children aged 6-12 years with asthma were assigned to inhaled budesonide or usual care. "
+            "Outcomes included exacerbation rate.",
+            {
+                ("P", "Children aged 6-12 years with asthma"),
+                ("I", "inhaled budesonide"),
+                ("C", "usual care"),
+                ("O", "exacerbation rate"),
+            },
+        ),
+        (
+            "Participants were randomly assigned to receive either 10 mg daily dapagliflozin or matching placebo.",
+            {("I", "10 mg daily dapagliflozin"), ("C", "matching placebo")},
+        ),
+    ],
+)
+def test_trigger_words_and_durations_stay_out_of_spans(text, expected):
+    assert tags(text) == expected
 
 
 def test_spans_split_at_next_trigger_and_never_overlap():
     spans = extract_pico("Patients with asthma treated with inhaled steroids versus placebo.")
     assert [(s["type"], s["text"]) for s in spans] == [
         ("P", "Patients with asthma"),
-        ("I", "treated with inhaled steroids"),
-        ("C", "versus placebo"),
+        ("I", "inhaled steroids"),
+        ("C", "placebo"),
     ]
     assert all(a["end"] <= b["start"] for a, b in zip(spans, spans[1:]))
     assert extract_pico("") == []
+
+
+def test_age_range_and_trial_aim_do_not_cut_or_fake_spans():
+    text = (
+        "This trial aimed to evaluate whether patients aged 18 to 65 years with depression benefit from yoga."
+    )
+    assert tags(text) == {("P", "patients aged 18 to 65 years with depression")}
 
 
 def test_decimals_do_not_end_a_span():

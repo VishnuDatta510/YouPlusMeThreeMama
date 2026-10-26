@@ -13,51 +13,82 @@ class Span(TypedDict):
     text: str
 
 
-_I_TRIGGERS = r"randomi[sz]ed to|received|receiving|treated with|administered|assigned to|allocated to"
-_C_TRIGGERS = r"compared (?:with|to)|versus|vs\.|placebo"
-
-
 def _clause(stop_words: str = "", stop_chars: str = ".;\n") -> str:
-    """Rest of the clause, ending before a stop char or the next PICO trigger. Decimals like 6.8 don't stop it."""
+    """Rest of the clause, ending before a stop char or stop word. Decimals like 6.8 don't stop it."""
     guard = rf"(?!\b(?:{stop_words})\b)" if stop_words else ""
     return rf"(?:{guard}(?:[^{stop_chars}]|(?<=\d)\.(?=\d)))*"
 
 
-PATTERNS = {
-    "P": re.compile(
-        r"\b(?:patients|adults|children|adolescents|women|men|participants|subjects|individuals|people)"
-        r"\s+(?:with|who|aged|undergoing|diagnosed)\b"
-        + _clause(rf"{_I_TRIGGERS}|{_C_TRIGGERS}|were|was|underwent"),
+# Trigger words are matched but left out of the span: only the named groups (P/I/C/O) are tagged.
+_ART = r"(?:(?:the|a|an)\s+)?"
+_VS = r"or|versus|vs|compared|against"
+_TIME = (
+    r"(?:for|at|after|over|during)\s+(?:\d+|one|two|three|four|six|eight|twelve|a\b|an\b)"  # "for 12 weeks"
+)
+_I_STOP = rf"{_VS}|{_TIME}|were|was|and were|with a|in order"
+_CMP = (  # comparators that need no trigger
+    r"placebo|sham(?:\s+\w+)?|usual care|standard (?:of )?care|standard treatment|no (?:treatment|intervention)"
+    r"|wait(?:ing)?[- ]list(?: control)?"
+)
+_P_STOP = (
+    r"were|was|underwent|had|has|have|benefits?|received|receiving|treated|randomi[sz]ed|assigned|(?<!\d\s)to"
+)
+_TRIAL_AIM = r"evaluate|assess|compare|determine|investigate|examine|test|explore|estimate"
+
+PATTERNS = [
+    # Population: "adults with type 2 diabetes", "children aged 6-12 years with asthma"
+    re.compile(
+        r"\b(?P<P>(?:patients|adults|children|adolescents|infants|women|men|participants|subjects|individuals|people)"
+        r"\s+(?:with|who|aged|undergoing|diagnosed)\b" + _clause(rf"{_VS}|{_P_STOP}") + ")",
         re.I,
     ),
-    "I": re.compile(rf"\b(?:{_I_TRIGGERS})\b" + _clause(_C_TRIGGERS, ".;,\n"), re.I),
-    "C": re.compile(rf"\b(?:{_C_TRIGGERS})" + _clause(stop_chars=".;,\n"), re.I),
-    "O": re.compile(
-        r"\b(?:(?:primary|secondary) (?:end ?points?|outcomes?)|outcomes? (?:was|were|included)"
-        r"|(?:was|were) measured|change in)\b" + _clause(),
+    # Intervention, then an optional comparator: "received metformin or placebo", "assigned to X versus Y"
+    re.compile(
+        r"\b(?:(?:randomi[sz]ed|assigned|allocated)\b[^.;\n]{0,80}?\bto(?:\s+receive)?"
+        r"|received|receiving|treated with|administered|given)\s+(?:either\s+)?"
+        rf"(?!(?:{_TRIAL_AIM})\b){_ART}"
+        rf"(?P<I>\w{_clause(_I_STOP, '.;,\n')})"
+        rf"(?:,?\s*(?:or|versus|vs\.?|compared (?:with|to))\s+{_ART}(?P<C>\w{_clause(_TIME, '.;,\n')}))?",
         re.I,
     ),
-}
+    re.compile(
+        rf"\b(?:compared (?:with|to)|versus|vs\.?|against)\s+{_ART}(?P<C>\w{_clause(_TIME, '.;,\n')})", re.I
+    ),
+    re.compile(rf"\b(?P<C>{_CMP})\b", re.I),
+    # Outcome: "the primary outcome was change in HbA1c", "outcomes included exacerbation rate"
+    re.compile(
+        r"\b(?:(?:primary|secondary|main) (?:end ?points?|outcomes?(?: measures?)?)|outcomes?)"
+        r"\s+(?:was|were|is|are|included|include|includes|comprised)\s+"
+        + _ART
+        + rf"(?P<O>\w{_clause(_TIME)})",
+        re.I,
+    ),
+    re.compile(rf"\b(?P<O>change (?:in|from baseline in) {_clause(_TIME)})", re.I),
+]
 MAX_SPAN = 200
 
 
 def _rules(text: str) -> list[Span]:
     found = []
-    for kind, pattern in PATTERNS.items():
+    for pattern in PATTERNS:
         for m in pattern.finditer(text):
-            snippet = text[m.start() : min(m.end(), m.start() + MAX_SPAN)].rstrip()
-            found.append(Span(type=kind, start=m.start(), end=m.start() + len(snippet), text=snippet))
+            for kind, value in m.groupdict().items():
+                if not value:
+                    continue
+                start = m.start(kind)
+                snippet = value[:MAX_SPAN].rstrip(" ,")
+                found.append(Span(type=kind, start=start, end=start + len(snippet), text=snippet))
     # Keep spans non-overlapping so the UI can highlight them: earliest start wins, then longest.
     spans, last_end = [], -1
     for s in sorted(found, key=lambda s: (s["start"], -s["end"])):
-        if s["start"] >= last_end:
+        if s["start"] >= last_end and s["text"]:
             spans.append(s)
             last_end = s["end"]
     return spans
 
 
 def method_version() -> str:
-    return f"{settings.pico_method}-v2"  # bump when the rules change so the next run re-tags
+    return f"{settings.pico_method}-v3"  # bump when the rules change so the next run re-tags
 
 
 def extract_pico(text: str) -> list[Span]:
