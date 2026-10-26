@@ -47,3 +47,28 @@ def test_deterministic_regardless_of_input_order():
     random.Random(42).shuffle(shuffled)
     assert find_duplicates(shuffled) == first == find_duplicates(records)
     assert all(m.representative_id < m.record_id for m in first)
+
+
+def test_later_report_of_the_same_study_is_not_a_duplicate():
+    title = "Metformin and cardiovascular outcomes in adults with type 2 diabetes"
+
+    def c(id, **kw):
+        return Candidate(
+            **{
+                "id": id,
+                "pmid": None,
+                "doi": None,
+                "title": title,
+                "year": 2020,
+                "first_author": "Smith",
+                **kw,
+            }
+        )
+
+    # Same title, different journal (conference abstract vs journal paper) or pages: a further report.
+    assert find_duplicates([c(1, journal="Diabetes Care"), c(2, journal="Circulation Supplement")]) == []
+    assert find_duplicates([c(1, pages="101-9"), c(2, pages="e2001")]) == []
+    assert find_duplicates([c(1, doi="10.1/a"), c(2, doi="10.1/b")]) == []
+    # The same record from two sources, with metadata spelled differently, still matches.
+    same = find_duplicates([c(1, journal="The Lancet", pages="101-109"), c(2, journal="Lancet", pages="101")])
+    assert [(m.record_id, m.representative_id) for m in same] == [(2, 1)]

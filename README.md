@@ -61,7 +61,7 @@ cd frontend && npm run lint && npx next typegen && npx tsc --noEmit && npm run b
 | `NCBI_API_KEY` | empty | Optional; raises the rate limit from 3 to 10 requests/s |
 | `MAX_FETCH` | `200` | Maximum PMIDs fetched per query version |
 | `PICO_METHOD` | `rules` | PICO tagger; `rules` is the only method so far |
-| `SCREENING_CRITERIA` | `non_english,non_human,case_report,simulation` | Active exclusion rules; changing them re-screens on the next run |
+| `SCREENING_CRITERIA` | all eight rules | Default active exclusion rules until a reviewer picks them on the Criteria page |
 | `SEED_EMAIL` / `SEED_PASSWORD` | `demo@minirayyan.dev` / `demo1234` | Demo reviewer, created if missing on start |
 | `PORT` | `8000` | Set by Render |
 

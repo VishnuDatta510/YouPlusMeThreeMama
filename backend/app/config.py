@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     ncbi_api_key: str = ""
     max_fetch: int = 200
     pico_method: str = "rules"
-    screening_criteria: str = "non_english,non_human,case_report,simulation"
+    screening_criteria: str = (
+        "non_english,non_human,case_report,simulation,review_article,not_research,retracted,protocol"
+    )
     seed_email: str = "demo@minirayyan.dev"
     seed_password: str = "demo1234"
 
