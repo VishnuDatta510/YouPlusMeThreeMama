@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import current_reviewer
 from app.db import get_db
-from app.models import QueryVersion, Reviewer
+from app.models import QueryVersion, Reviewer, RunLog
 from app.schemas import QueryIn, QueryVersionOut, RunLogOut
 from app.services import pipeline, pubmed
 
@@ -48,3 +48,10 @@ def fetch(version_id: int, db: Session = Depends(get_db)):
     if qv is None:
         raise HTTPException(404, "Query version not found")
     return pipeline.run(db, qv)
+
+
+@router.get("/{version_id}/runs", response_model=list[RunLogOut])
+def runs(version_id: int, db: Session = Depends(get_db)):
+    return db.scalars(
+        select(RunLog).where(RunLog.query_version_id == version_id).order_by(RunLog.id.desc()).limit(50)
+    ).all()

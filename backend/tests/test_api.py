@@ -99,3 +99,12 @@ def test_fetch_is_incremental(client, auth, db):
     assert logs[2]["details"]["screened"] == 0  # same method version, nothing re-screened
     assert efetch.call_count == 1
     assert db.scalar(select(func.count()).select_from(RecordQueryLink)) == 32
+    runs = client.get(f"/queries/{v2['id']}/runs", headers=auth).json()
+    assert [r["step"] for r in runs] == ["pico", "screen", "dedupe", "fetch"]
+
+
+@respx.mock
+def test_preview_pubmed_error_is_502(client, auth):
+    respx.post(f"{EUTILS}/esearch.fcgi").mock(return_value=httpx.Response(400, text="bad"))
+    v = client.post("/queries/preview", json={"query_string": "x"}, headers=auth)
+    assert v.status_code == 502
