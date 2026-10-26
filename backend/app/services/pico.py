@@ -13,9 +13,12 @@ class Span(TypedDict):
     text: str
 
 
+_STAT = r"\s*(?:\(\s*(?:[-+−\d<>=≤≥]|p\s*[<=>])|±)"  # "(-4.4 ± 2.39", "(P<0.05)"
+
+
 def _clause(stop_words: str = "", stop_chars: str = ".;\n") -> str:
-    """Rest of the clause, ending before a stop char or stop word. Decimals like 6.8 don't stop it."""
-    guard = rf"(?!\b(?:{stop_words})\b)" if stop_words else ""
+    """Rest of the clause, ending before a stop char, stop word or statistic. Decimals like 6.8 don't stop it."""
+    guard = rf"(?!\b(?:{stop_words})\b|{_STAT})" if stop_words else rf"(?!{_STAT})"
     return rf"(?:{guard}(?:[^{stop_chars}]|(?<=\d)\.(?=\d)))*"
 
 
@@ -26,7 +29,9 @@ _VS = r"or|versus|vs|compared|against"
 _TIME = (
     r"(?:for|at|after|over|during)\s+(?:\d+|one|two|three|four|six|eight|twelve|a\b|an\b)"  # "for 12 weeks"
 )
-_I_STOP = rf"{_VS}|{_TIME}|were|was|and were|with a|in order"
+_GROUP = r"in (?:patients|people|adults|children|women|men|participants|subjects|individuals)"  # "... in women with PCOS"
+_I_STOP = rf"{_VS}|{_TIME}|{_GROUP}|were|was|and were|with a|in order|who|which|that"
+_C_STOP = rf"{_TIME}|{_GROUP}|for|among|were|was|who|which|that"
 _CMP = (  # comparators that need no trigger
     r"placebo|sham(?:\s+\w+)?|usual care|standard (?:of )?care|standard treatment|no (?:treatment|intervention)"
     r"|wait(?:ing)?[- ]list(?: control)?"
@@ -34,6 +39,13 @@ _CMP = (  # comparators that need no trigger
 _P_STOP = (
     r"were|was|underwent|had|has|have|benefits?|received|receiving|treated|randomi[sz]ed|assigned|(?<!\d\s)to"
 )
+# I and C start with a word, not a number or a group label: "vs -2.05", "compared to baseline", "both arms"
+_NOT_ARM = (
+    r"(?!(?:baseline|both|each|either|the two|other|in|on|at|by|for|from|of|to|whether|this|these|those)\b)"
+)
+_WORD = rf"{_NOT_ARM}[^\W\d_]"
+_DOSE_OR_WORD = rf"{_NOT_ARM}\w"  # an intervention may start with its dose: "10 mg daily dapagliflozin"
+_FINDING = r"similar|comparable|not|no|significantly|improved|reduced|higher|lower|greater|better|worse"
 _TRIAL_AIM = r"evaluate|assess|compare|determine|investigate|examine|test|explore|estimate"
 
 PATTERNS = [
@@ -48,12 +60,13 @@ PATTERNS = [
         r"\b(?:(?:randomi[sz]ed|assigned|allocated)\b[^.;\n]{0,80}?\bto(?:\s+receive)?"
         r"|received|receiving|treated with|administered|given)\s+(?:either\s+)?"
         rf"(?!(?:{_TRIAL_AIM})\b){_ART}"
-        rf"(?P<I>\w{_clause(_I_STOP, _END)})"
-        rf"(?:,?\s*(?:or|versus|vs\.?|compared (?:with|to))\s+{_ART}(?P<C>\w{_clause(_TIME, _END)}))?",
+        rf"(?P<I>{_DOSE_OR_WORD}{_clause(_I_STOP, _END)})"
+        rf"(?:,?\s*(?:or|versus|vs\.?|compared (?:with|to))\s+{_ART}(?P<C>{_WORD}{_clause(_C_STOP, _END)}))?",
         re.I,
     ),
     re.compile(
-        rf"\b(?:compared (?:with|to)|versus|vs\.?|against)\s+{_ART}(?P<C>\w{_clause(_TIME, _END)})", re.I
+        rf"\b(?:compared (?:with|to)|versus|vs\.?|against)\s+{_ART}(?P<C>{_WORD}{_clause(_C_STOP, _END)})",
+        re.I,
     ),
     re.compile(rf"\b(?P<C>{_CMP})\b", re.I),
     # Outcome: "the primary outcome was change in HbA1c", "outcomes included exacerbation rate"
@@ -61,27 +74,39 @@ PATTERNS = [
         r"\b(?:(?:primary|secondary|main) (?:end ?points?|outcomes?(?: measures?)?)|outcomes?)"
         r"\s+(?:was|were|is|are|included|include|includes|comprised)\s+"
         + _ART
-        + rf"(?P<O>\w{_clause(_TIME)})",
+        + rf"(?!(?:{_FINDING})\b)(?P<O>\w{_clause(_TIME)})",
         re.I,
     ),
     re.compile(rf"\b(?P<O>change (?:in|from baseline in) {_clause(_TIME)})", re.I),
 ]
 MAX_SPAN = 200
+# Results sentences restate the arms around numbers ("EMPA vs PGZ (-4.4 ± 2.39 vs -2.05"), so they are not tagged.
+_RESULTS = re.compile(r"^(?:RESULTS?|FINDINGS)\b[^:\n]{0,40}:[^\n]*", re.I | re.M)
+_TAIL = re.compile(r"(?:\s+(?:who|which|that|whose|those|and|or|of|in|with))+\s*$|[\s,(]+$", re.I)
 
 
 def _rules(text: str) -> list[Span]:
+    scan = _RESULTS.sub(lambda m: " " * len(m.group()), text)  # same length, so offsets still match `text`
     found = []
     for pattern in PATTERNS:
-        for m in pattern.finditer(text):
+        for m in pattern.finditer(scan):
             for kind, value in m.groupdict().items():
                 if not value:
                     continue
                 start = m.start(kind)
-                snippet = value[:MAX_SPAN].rstrip(" ,")
+                snippet = value[:MAX_SPAN]
+                if snippet.count("(") > snippet.count(
+                    ")"
+                ):  # "medications (metformin": cut at the open bracket
+                    snippet = snippet[: snippet.rindex("(")]
+                elif snippet.count(")") > snippet.count("("):  # "insulin glargine)"
+                    snippet = snippet[: snippet.index(")")]
+                snippet = _TAIL.sub("", snippet)
                 found.append(Span(type=kind, start=start, end=start + len(snippet), text=snippet))
-    # Keep spans non-overlapping so the UI can highlight them: earliest start wins, then longest.
+    # Keep spans non-overlapping so the UI can highlight them: earliest start wins, then longest,
+    # then C over I ("received usual care" is the comparator arm).
     spans, last_end = [], -1
-    for s in sorted(found, key=lambda s: (s["start"], -s["end"])):
+    for s in sorted(found, key=lambda s: (s["start"], -s["end"], s["type"] != "C")):
         if s["start"] >= last_end and s["text"]:
             spans.append(s)
             last_end = s["end"]
@@ -89,7 +114,7 @@ def _rules(text: str) -> list[Span]:
 
 
 def method_version() -> str:
-    return f"{settings.pico_method}-v3"  # bump when the rules change so the next run re-tags
+    return f"{settings.pico_method}-v4"  # bump when the rules change so the next run re-tags
 
 
 def extract_pico(text: str) -> list[Span]:

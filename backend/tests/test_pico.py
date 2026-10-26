@@ -85,3 +85,16 @@ def test_age_range_and_trial_aim_do_not_cut_or_fake_spans():
 
 def test_decimals_do_not_end_a_span():
     assert ("P", "adults with HbA1c 6.8-8.5%") in tags("We enrolled adults with HbA1c 6.8-8.5%. Then...")
+
+
+def test_results_lines_and_statistics_are_not_tagged():
+    text = (
+        "METHODS: Sixty patients with NAFLD were randomly assigned to receive EMPA 10 mg/day or PGZ 30 mg/day.\n"
+        "RESULTS: Waist circumference fell more with EMPA compared to PGZ (-4.4 ± 2.39 vs -2.05, p<0.001) "
+        "and with MET compared to baseline (P < 0.05)."
+    )
+    assert tags(text) == {("P", "patients with NAFLD"), ("I", "EMPA 10 mg/day"), ("C", "PGZ 30 mg/day")}
+    assert tags("We compared drug A versus placebo in women with PCOS (P < 0.05).") == {
+        ("C", "placebo"),
+        ("P", "women with PCOS"),
+    }
