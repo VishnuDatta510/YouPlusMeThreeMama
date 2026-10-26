@@ -8,9 +8,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import DedupGroup, DedupGroupMember, QueryVersion, Record, RecordQueryLink, RunLog
+from app.models import (
+    DedupGroup,
+    DedupGroupMember,
+    MachineResult,
+    QueryVersion,
+    Record,
+    RecordQueryLink,
+    RunLog,
+)
 from app.services import dedupe as dedupe_service
-from app.services import pubmed
+from app.services import pubmed, screening
 
 log = logging.getLogger(__name__)
 EFETCH_BATCH = 100
@@ -92,7 +100,36 @@ def dedupe(db: Session, qv: QueryVersion) -> dict:
     }
 
 
-STEPS = [("fetch", fetch), ("dedupe", dedupe)]
+def _records_without_result(db: Session, qv: QueryVersion, step: str, method: str):
+    """Records linked to this version that have no machine result for (step, method) yet."""
+    done = select(MachineResult.record_id).where(
+        MachineResult.step == step, MachineResult.method_version == method
+    )
+    return db.scalars(
+        select(Record)
+        .join(RecordQueryLink, RecordQueryLink.record_id == Record.id)
+        .where(RecordQueryLink.query_version_id == qv.id, Record.id.not_in(done))
+        .order_by(Record.id)
+    ).all()
+
+
+def screen(db: Session, qv: QueryVersion) -> dict:
+    criteria = screening.active_criteria()
+    method = screening.method_version(criteria)
+    counts = {"include": 0, "exclude": 0, "maybe": 0}
+    for r in _records_without_result(db, qv, "screen", method):
+        out = screening.screen(r, criteria)
+        counts[out["label"]] += 1
+        db.add(
+            MachineResult(
+                record_id=r.id, query_version_id=qv.id, step="screen", method_version=method, output=out
+            )
+        )
+    db.commit()
+    return {"method_version": method, "screened": sum(counts.values()), **counts}
+
+
+STEPS = [("fetch", fetch), ("dedupe", dedupe), ("screen", screen)]
 
 
 def run(db: Session, qv: QueryVersion) -> list[RunLog]:
