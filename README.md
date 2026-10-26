@@ -96,7 +96,7 @@ flowchart LR
       - The lowest record id is the representative, so results are deterministic.
    3. **screen**: transparent rules (non-English, non-human, case report, simulation). Each result is stored with its `method_version`, so re-runs only screen what is new or what the rules changed.
    4. **pico**: rule-based P/I/C/O spans for included and maybe records with an abstract.
-3. **Review**: the records table shows group representatives only. The detail page shows highlighted PICO spans and lets reviewers change status, mark or unmark duplicates, and edit or remove spans. Every action appends a `human_decisions` row and appears in the History panel, where **Restore** re-applies an earlier decision by appending it again. When reviewers' latest screening labels disagree, the record gets a **conflict** badge (and a filter); the newest decision stays in effect until someone resolves it.
+3. **Review**: the records table shows group representatives only. The detail page shows highlighted PICO spans and lets reviewers change status, mark or unmark duplicates (one at a time, or a whole group from its representative), and edit or remove spans. Every action appends a `human_decisions` row and appears in the History panel, where **Restore** re-applies an earlier decision by appending it again. When reviewers' latest screening labels disagree, the record gets a **conflict** badge (and a filter); the newest decision stays in effect until someone resolves it.
 4. **Compare versions**: `GET /queries/{id}/diff` (the **Diff** link on the Queries page) lists the records a version gained and lost compared with its parent version.
 5. **Export**: `GET /export/included.csv` returns the included studies with PMID, DOI, title, authors, year, journal and PICO text.
 

@@ -15,12 +15,17 @@ export default function RecordPage({ params }: PageProps<"/records/[id]">) {
     api.record(id).then(setRecord).catch((e) => setError(e.message));
   }, [id]);
 
-  async function decide(d: Decision) {
+  /** Appends `d` to this record, or to each of `others` (e.g. every member of a duplicate group) and then reloads. */
+  async function decide(d: Decision, others?: number[]) {
     if (!record) return false;
     setBusy(true);
     setError("");
     try {
-      setRecord(await api.decide(record.id, d));
+      if (!others) setRecord(await api.decide(record.id, d));
+      else {
+        for (const id of others) await api.decide(id, d);
+        setRecord(await api.record(record.id));
+      }
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -81,7 +86,7 @@ export default function RecordPage({ params }: PageProps<"/records/[id]">) {
   );
 }
 
-type SaveProps = { busy: boolean; onSave: (d: Decision) => Promise<boolean> };
+type SaveProps = { busy: boolean; onSave: (d: Decision, others?: number[]) => Promise<boolean> };
 
 function Legend() {
   return (
@@ -342,6 +347,22 @@ function Duplicates({ record, busy, onSave }: SaveProps & { record: RecordDetail
               {d.title} {d.year && `(${d.year})`}
             </li>
           ))}
+          {record.duplicates.length > 1 && (
+            <li>
+              <button
+                className="btn mt-1"
+                disabled={busy}
+                onClick={() =>
+                  onSave(
+                    { decision_type: "duplicate", value: { duplicate_of: null }, note: `Group unlinked from #${record.id}` },
+                    record.duplicates.map((d) => d.id),
+                  )
+                }
+              >
+                None of these are duplicates
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>
