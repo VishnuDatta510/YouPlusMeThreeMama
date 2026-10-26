@@ -3,12 +3,13 @@
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import QueryVersion, Record, RecordQueryLink, RunLog
+from app.models import DedupGroup, DedupGroupMember, QueryVersion, Record, RecordQueryLink, RunLog
+from app.services import dedupe as dedupe_service
 from app.services import pubmed
 
 log = logging.getLogger(__name__)
@@ -44,7 +45,54 @@ def fetch(db: Session, qv: QueryVersion) -> dict:
     return {"found": len(ids), "new": len(new_ids), "already_known": len(ids) - len(new_ids)}
 
 
-STEPS = [("fetch", fetch)]
+def dedupe(db: Session, qv: QueryVersion) -> dict:
+    """Groups are derived data: rebuilt over the whole record set. Human duplicate decisions live elsewhere."""
+    rows = db.execute(
+        select(
+            Record.id,
+            Record.pmid,
+            Record.doi,
+            Record.raw["doi"].astext,
+            Record.title,
+            Record.year,
+            Record.first_author,
+        )
+    ).all()
+    candidates = [
+        dedupe_service.Candidate(
+            id=r[0], pmid=r[1], doi=r[2] or r[3], title=r[4], year=r[5], first_author=r[6]
+        )
+        for r in rows
+    ]
+    matches = dedupe_service.find_duplicates(candidates)
+    db.execute(delete(DedupGroupMember))
+    db.execute(delete(DedupGroup))
+    groups: dict[int, DedupGroup] = {}
+    for m in matches:
+        if m.representative_id not in groups:
+            groups[m.representative_id] = DedupGroup(representative_record_id=m.representative_id)
+            db.add(groups[m.representative_id])
+    db.flush()
+    db.add_all(
+        DedupGroupMember(
+            group_id=groups[m.representative_id].id,
+            record_id=m.record_id,
+            match_method=m.method,
+            score=m.score,
+            needs_review=m.needs_review,
+        )
+        for m in matches
+    )
+    db.commit()
+    return {
+        "records": len(candidates),
+        "groups": len(groups),
+        "duplicates": len(matches),
+        "needs_review": sum(m.needs_review for m in matches),
+    }
+
+
+STEPS = [("fetch", fetch), ("dedupe", dedupe)]
 
 
 def run(db: Session, qv: QueryVersion) -> list[RunLog]:
